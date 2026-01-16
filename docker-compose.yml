@@ -1,0 +1,383 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: chainorchestra-postgres
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-chainorchestra}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-chainorchestra}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: chainorchestra-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  user-service:
+    build:
+      context: .
+      dockerfile: services/user-service/Dockerfile
+    container_name: chainorchestra-user-service
+    restart: unless-stopped
+    ports:
+      - "${USER_SERVICE_PORT:-8001}:8001"
+    environment:
+      LISTEN: ":8001"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: user_service
+      POSTGRES_PASSWORD: user_service_pass
+      POSTGRES_DB: ${POSTGRES_DB:-chainorchestra}
+      POSTGRES_SCHEMA: users
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
+      JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-15m}
+      JWT_REFRESH_TTL: ${JWT_REFRESH_TTL:-168h}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@chainorchestra.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
+      NATS_URL: nats://nats:4222
+      LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  order-service:
+    build:
+      context: .
+      dockerfile: services/order-service/Dockerfile
+    container_name: chainorchestra-order-service
+    restart: unless-stopped
+    ports:
+      - "${ORDER_SERVICE_PORT:-8002}:8002"
+    environment:
+      LISTEN: ":8002"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: order_service
+      POSTGRES_PASSWORD: order_service_pass
+      POSTGRES_DB: ${POSTGRES_DB:-chainorchestra}
+      POSTGRES_SCHEMA: orders
+      NATS_URL: nats://nats:4222
+      LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8002/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  inventory-service:
+    build:
+      context: .
+      dockerfile: services/inventory-service/Dockerfile
+    container_name: chainorchestra-inventory-service
+    restart: unless-stopped
+    ports:
+      - "${INVENTORY_SERVICE_PORT:-8003}:8003"
+    environment:
+      LISTEN: ":8003"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: inventory_service
+      POSTGRES_PASSWORD: inventory_service_pass
+      POSTGRES_DB: ${POSTGRES_DB:-chainorchestra}
+      POSTGRES_SCHEMA: inventory
+      NATS_URL: nats://nats:4222
+      LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8003/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  logistics-service:
+    build:
+      context: .
+      dockerfile: services/logistics-service/Dockerfile
+    container_name: chainorchestra-logistics-service
+    restart: unless-stopped
+    ports:
+      - "${LOGISTICS_SERVICE_PORT:-8004}:8004"
+    environment:
+      LISTEN: ":8004"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: logistics_service
+      POSTGRES_PASSWORD: logistics_service_pass
+      POSTGRES_DB: ${POSTGRES_DB:-chainorchestra}
+      POSTGRES_SCHEMA: logistics
+      NATS_URL: nats://nats:4222
+      LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8004/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  analytics-service:
+    build:
+      context: .
+      dockerfile: services/analytics-service/Dockerfile
+    container_name: chainorchestra-analytics-service
+    restart: unless-stopped
+    ports:
+      - "${ANALYTICS_SERVICE_PORT:-8005}:8005"
+    environment:
+      LISTEN: ":8005"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: analytics_service
+      POSTGRES_PASSWORD: analytics_service_pass
+      POSTGRES_DB: ${POSTGRES_DB:-chainorchestra}
+      POSTGRES_SCHEMA: analytics
+      NATS_URL: nats://nats:4222
+      LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8005/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  notification-service:
+    build:
+      context: .
+      dockerfile: services/notification-service/Dockerfile
+    container_name: chainorchestra-notification-service
+    restart: unless-stopped
+    ports:
+      - "${NOTIFICATION_SERVICE_PORT:-8006}:8006"
+    environment:
+      LISTEN: ":8006"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: notification_service
+      POSTGRES_PASSWORD: notification_service_pass
+      POSTGRES_DB: ${POSTGRES_DB:-chainorchestra}
+      POSTGRES_SCHEMA: notifications
+      NATS_URL: nats://nats:4222
+      LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8006/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  nats:
+    image: nats:2-alpine
+    container_name: chainorchestra-nats
+    restart: unless-stopped
+    ports:
+      - "${NATS_PORT:-4222}:4222"
+      - "${NATS_MONITOR_PORT:-8222}:8222"
+    command: --jetstream --http_port 8222
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8222/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: services/api-gateway/Dockerfile
+    container_name: chainorchestra-api-gateway
+    restart: unless-stopped
+    ports:
+      - "${GATEWAY_PORT:-8080}:8080"
+    environment:
+      LISTEN: ":8080"
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
+      RATE_LIMIT: ${RATE_LIMIT:-100}
+      RATE_LIMIT_TTL: ${RATE_LIMIT_TTL:-1m}
+      USER_SERVICE_URL: http://user-service:8001
+      ORDER_SERVICE_URL: http://order-service:8002
+      INVENTORY_SERVICE_URL: http://inventory-service:8003
+      LOGISTICS_SERVICE_URL: http://logistics-service:8004
+      ANALYTICS_SERVICE_URL: http://analytics-service:8005
+      NOTIFICATION_SERVICE_URL: http://notification-service:8006
+    depends_on:
+      user-service:
+        condition: service_healthy
+      order-service:
+        condition: service_healthy
+      inventory-service:
+        condition: service_healthy
+      logistics-service:
+        condition: service_healthy
+      analytics-service:
+        condition: service_healthy
+      notification-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  mcp-host:
+    build:
+      context: .
+      dockerfile: mcp-host/Dockerfile
+    container_name: chainorchestra-mcp-host
+    restart: unless-stopped
+    ports:
+      - "${MCP_HOST_PORT:-8090}:8090"
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "8090"
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      GATEWAY_URL: http://api-gateway:8080
+      MCP_SERVER_CMD: python
+      MCP_SERVER_ARGS: /app/mcp-orchestrator/main.py
+      MCP_REQUEST_TIMEOUT: "30"
+      MAX_TOOL_ROUNDS: ${MAX_TOOL_ROUNDS:-10}
+      TOOL_TIMEOUT: ${TOOL_TIMEOUT:-30}
+      RETRY_MAX_ATTEMPTS: ${RETRY_MAX_ATTEMPTS:-3}
+      SESSION_TTL: ${SESSION_TTL:-1800}
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8090/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:${GATEWAY_PORT:-8080}
+        NEXT_PUBLIC_MCP_WS_URL: ws://localhost:${MCP_HOST_PORT:-8090}
+    container_name: chainorchestra-frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  prometheus:
+    image: prom/prometheus:v3.4.1
+    container_name: chainorchestra-prometheus
+    restart: unless-stopped
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=7d"
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  grafana:
+    image: grafana/grafana:11.6.1
+    container_name: chainorchestra-grafana
+    restart: unless-stopped
+    ports:
+      - "${GRAFANA_PORT:-3001}:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./docker/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+volumes:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
