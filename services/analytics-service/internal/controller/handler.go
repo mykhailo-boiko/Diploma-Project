@@ -1,0 +1,261 @@
+package controller
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"time"
+
+	"go.uber.org/zap"
+
+	"github.com/haradrim/chainorchestra/internal/pkg/httpresponse"
+	"github.com/haradrim/chainorchestra/services/analytics-service/internal/analytics"
+)
+
+type AnalyticsService interface {
+	GetSalesDaily(ctx context.Context, from, to time.Time) ([]analytics.SalesDaily, error)
+	GetInventorySnapshots(ctx context.Context, from, to time.Time) ([]analytics.InventorySnapshot, error)
+	GetLogisticsDaily(ctx context.Context, from, to time.Time) ([]analytics.LogisticsDaily, error)
+	GetSalesSummary(ctx context.Context, from, to time.Time) (analytics.SalesSummary, error)
+	GetSalesTrends(ctx context.Context, from, to time.Time, granularity string) ([]analytics.SalesTrend, error)
+	GetInventorySummary(ctx context.Context, from, to time.Time) (analytics.InventorySummary, error)
+	GetLogisticsPerformance(ctx context.Context, from, to time.Time) (analytics.LogisticsPerformance, error)
+	DetectAnomalies(ctx context.Context, from, to time.Time) ([]analytics.Anomaly, error)
+	GetOptimizations(ctx context.Context, from, to time.Time) ([]analytics.Optimization, error)
+	GenerateReport(ctx context.Context, req analytics.ReportRequest) (analytics.Report, error)
+}
+
+type AnalyticsController struct {
+	svc AnalyticsService
+	log *zap.Logger
+}
+
+func NewAnalyticsController(svc AnalyticsService, log *zap.Logger) *AnalyticsController {
+	return &AnalyticsController{svc: svc, log: log}
+}
+
+func (c *AnalyticsController) GetSalesDaily(w http.ResponseWriter, r *http.Request) {
+	from, to, ok := parseDateRange(r)
+	if !ok {
+		httpresponse.BadRequest(w, "validation_error", "date_from and date_to are required (YYYY-MM-DD format)")
+		return
+	}
+
+	records, err := c.svc.GetSalesDaily(r.Context(), from, to)
+	if err != nil {
+		c.log.Error("Failed to get sales daily", zap.Error(err))
+		httpresponse.InternalError(w, "internal_error", "internal server error")
+		return
+	}
+
+	if records == nil {
+		records = []analytics.SalesDaily{}
+	}
+
+	httpresponse.OK(w, records)
+}
+
+func (c *AnalyticsController) GetInventorySnapshots(w http.ResponseWriter, r *http.Request) {
+	from, to, ok := parseDateRange(r)
+	if !ok {
+		httpresponse.BadRequest(w, "validation_error", "date_from and date_to are required (YYYY-MM-DD format)")
+		return
+	}
+
+	records, err := c.svc.GetInventorySnapshots(r.Context(), from, to)
+	if err != nil {
+		c.log.Error("Failed to get inventory snapshots", zap.Error(err))
+		httpresponse.InternalError(w, "internal_error", "internal server error")
+		return
+	}
+
+	if records == nil {
+		records = []analytics.InventorySnapshot{}
+	}
+
+	httpresponse.OK(w, records)
+}
+
+func (c *AnalyticsController) GetLogisticsDaily(w http.ResponseWriter, r *http.Request) {
+	from, to, ok := parseDateRange(r)
+	if !ok {
+		httpresponse.BadRequest(w, "validation_error", "date_from and date_to are required (YYYY-MM-DD format)")
+		return
+	}
+
+	records, err := c.svc.GetLogisticsDaily(r.Context(), from, to)
+	if err != nil {
+		c.log.Error("Failed to get logistics daily", zap.Error(err))
+		httpresponse.InternalError(w, "internal_error", "internal server error")
+		return
+	}
+
+	if records == nil {
+		records = []analytics.LogisticsDaily{}
+	}
+
+	httpresponse.OK(w, records)
+}
+
+func (c *AnalyticsController) GetSalesSummary(w http.ResponseWriter, r *http.Request) {
+	from, to, ok := parseDateRange(r)
+	if !ok {
+		httpresponse.BadRequest(w, "validation_error", "date_from and date_to are required (YYYY-MM-DD format)")
+		return
+	}
+
+	summary, err := c.svc.GetSalesSummary(r.Context(), from, to)
+	if err != nil {
+		c.log.Error("Failed to get sales summary", zap.Error(err))
+		httpresponse.InternalError(w, "internal_error", "internal server error")
+		return
+	}
+
+	httpresponse.OK(w, summary)
+}
+
+func (c *AnalyticsController) GetSalesTrends(w http.ResponseWriter, r *http.Request) {
+	from, to, ok := parseDateRange(r)
+	if !ok {
+		httpresponse.BadRequest(w, "validation_error", "date_from and date_to are required (YYYY-MM-DD format)")
+		return
+	}
+
+	granularity := r.URL.Query().Get("granularity")
+	if granularity == "" {
+		granularity = "day"
+	}
+
+	if granularity != "day" && granularity != "week" {
+		httpresponse.BadRequest(w, "validation_error", "granularity must be 'day' or 'week'")
+		return
+	}
+
+	trends, err := c.svc.GetSalesTrends(r.Context(), from, to, granularity)
+	if err != nil {
+		c.log.Error("Failed to get sales trends", zap.Error(err))
+		httpresponse.InternalError(w, "internal_error", "internal server error")
+		return
+	}
+
+	if trends == nil {
+		trends = []analytics.SalesTrend{}
+	}
+
+	httpresponse.OK(w, trends)
+}
+
+func (c *AnalyticsController) GetInventorySummary(w http.ResponseWriter, r *http.Request) {
+	from, to, ok := parseDateRange(r)
+	if !ok {
+		httpresponse.BadRequest(w, "validation_error", "date_from and date_to are required (YYYY-MM-DD format)")
+		return
+	}
+
+	summary, err := c.svc.GetInventorySummary(r.Context(), from, to)
+	if err != nil {
+		c.log.Error("Failed to get inventory summary", zap.Error(err))
+		httpresponse.InternalError(w, "internal_error", "internal server error")
+		return
+	}
+
+	httpresponse.OK(w, summary)
+}
+
+func (c *AnalyticsController) GetLogisticsPerformance(w http.ResponseWriter, r *http.Request) {
+	from, to, ok := parseDateRange(r)
+	if !ok {
+		httpresponse.BadRequest(w, "validation_error", "date_from and date_to are required (YYYY-MM-DD format)")
+		return
+	}
+
+	perf, err := c.svc.GetLogisticsPerformance(r.Context(), from, to)
+	if err != nil {
+		c.log.Error("Failed to get logistics performance", zap.Error(err))
+		httpresponse.InternalError(w, "internal_error", "internal server error")
+		return
+	}
+
+	httpresponse.OK(w, perf)
+}
+
+func (c *AnalyticsController) GetAnomalies(w http.ResponseWriter, r *http.Request) {
+	from, to, ok := parseDateRange(r)
+	if !ok {
+		httpresponse.BadRequest(w, "validation_error", "date_from and date_to are required (YYYY-MM-DD format)")
+		return
+	}
+
+	anomalies, err := c.svc.DetectAnomalies(r.Context(), from, to)
+	if err != nil {
+		c.log.Error("Failed to detect anomalies", zap.Error(err))
+		httpresponse.InternalError(w, "internal_error", "internal server error")
+		return
+	}
+
+	httpresponse.OK(w, anomalies)
+}
+
+func (c *AnalyticsController) GetOptimizations(w http.ResponseWriter, r *http.Request) {
+	from, to, ok := parseDateRange(r)
+	if !ok {
+		httpresponse.BadRequest(w, "validation_error", "date_from and date_to are required (YYYY-MM-DD format)")
+		return
+	}
+
+	opts, err := c.svc.GetOptimizations(r.Context(), from, to)
+	if err != nil {
+		c.log.Error("Failed to get optimizations", zap.Error(err))
+		httpresponse.InternalError(w, "internal_error", "internal server error")
+		return
+	}
+
+	httpresponse.OK(w, opts)
+}
+
+func (c *AnalyticsController) GenerateReport(w http.ResponseWriter, r *http.Request) {
+	var req analytics.ReportRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpresponse.BadRequest(w, "validation_error", "invalid request body")
+		return
+	}
+
+	if req.ReportType == "" {
+		httpresponse.BadRequest(w, "validation_error", "report_type is required")
+		return
+	}
+	if req.DateFrom == "" || req.DateTo == "" {
+		httpresponse.BadRequest(w, "validation_error", "date_from and date_to are required")
+		return
+	}
+
+	report, err := c.svc.GenerateReport(r.Context(), req)
+	if err != nil {
+		c.log.Error("Failed to generate report", zap.Error(err))
+		httpresponse.BadRequest(w, "report_error", err.Error())
+		return
+	}
+
+	httpresponse.OK(w, report)
+}
+
+func parseDateRange(r *http.Request) (time.Time, time.Time, bool) {
+	fromStr := r.URL.Query().Get("date_from")
+	toStr := r.URL.Query().Get("date_to")
+
+	if fromStr == "" || toStr == "" {
+		return time.Time{}, time.Time{}, false
+	}
+
+	from, err := time.Parse("2006-01-02", fromStr)
+	if err != nil {
+		return time.Time{}, time.Time{}, false
+	}
+
+	to, err := time.Parse("2006-01-02", toStr)
+	if err != nil {
+		return time.Time{}, time.Time{}, false
+	}
+
+	return from, to, true
+}
