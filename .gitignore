@@ -2,16 +2,44 @@
 .env
 .env.local
 .env.*.local
+.env.production
+.env.development
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+secrets/
+credentials/
+*.secret
+service-account*.json
+**/firebase-adminsdk*.json
+gcp-key*.json
 
 # IDE
 .idea/
 .vscode/
+.fleet/
+.zed/
+.cursor/
+.windsurf/
+.aider*
 *.swp
 *.swo
+*.swn
+*~
+
+# AI tooling
+.claude/
+.mcp.json
+.aider.conf*
+.continue/
 
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
 
 # Go
 /cmd
@@ -23,6 +51,11 @@ Thumbs.db
 *.dylib
 *.test
 *.out
+*.prof
+*.heap
+*.cpu
+coverage.out
+coverage.html
 
 # Python
 __pycache__/
@@ -30,7 +63,14 @@ __pycache__/
 *$py.class
 .venv/
 venv/
+env/
+.python-version
 *.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.tox/
+.nox/
 
 # Node / Frontend
 node_modules/
@@ -38,15 +78,44 @@ node_modules/
 out/
 build/
 dist/
+.turbo/
+.swc/
+*.tsbuildinfo
+next-env.d.ts
+.eslintcache
 
 # Docker
 docker-compose.override.yml
+docker-compose.local.yml
 
 # Logs
 *.log
 logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
 # Coverage
 coverage/
 htmlcov/
 .coverage
+.coverage.*
+lcov.info
+.nyc_output/
+
+# Backup / temp / scratch
+*.bak
+*.tmp
+*.orig
+*.rej
+*.local
+scratch/
+tmp/
+.cache/
+
+# Internal process artefacts (not meant for repo)
+progress.md
+progress.txt
+tasks.json
+ralph.sh
