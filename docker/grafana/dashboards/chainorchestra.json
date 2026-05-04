@@ -1,0 +1,255 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "title": "Request Rate (req/s) per Service",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(chainorchestra_api_gateway_http_requests_total[5m])) or vector(0)",
+          "legendFormat": "api-gateway",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(chainorchestra_user_service_http_requests_total[5m])) or vector(0)",
+          "legendFormat": "user-service",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(rate(chainorchestra_order_service_http_requests_total[5m])) or vector(0)",
+          "legendFormat": "order-service",
+          "refId": "C"
+        },
+        {
+          "expr": "sum(rate(chainorchestra_inventory_service_http_requests_total[5m])) or vector(0)",
+          "legendFormat": "inventory-service",
+          "refId": "D"
+        },
+        {
+          "expr": "sum(rate(chainorchestra_logistics_service_http_requests_total[5m])) or vector(0)",
+          "legendFormat": "logistics-service",
+          "refId": "E"
+        },
+        {
+          "expr": "sum(rate(chainorchestra_analytics_service_http_requests_total[5m])) or vector(0)",
+          "legendFormat": "analytics-service",
+          "refId": "F"
+        },
+        {
+          "expr": "sum(rate(chainorchestra_notification_service_http_requests_total[5m])) or vector(0)",
+          "legendFormat": "notification-service",
+          "refId": "G"
+        }
+      ]
+    },
+    {
+      "title": "Error Rate (5xx) per Service",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 },
+          "color": { "mode": "palette-classic" }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(chainorchestra_api_gateway_http_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+          "legendFormat": "api-gateway",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(chainorchestra_user_service_http_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+          "legendFormat": "user-service",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(rate(chainorchestra_order_service_http_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+          "legendFormat": "order-service",
+          "refId": "C"
+        },
+        {
+          "expr": "sum(rate(chainorchestra_inventory_service_http_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+          "legendFormat": "inventory-service",
+          "refId": "D"
+        },
+        {
+          "expr": "sum(rate(chainorchestra_logistics_service_http_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+          "legendFormat": "logistics-service",
+          "refId": "E"
+        },
+        {
+          "expr": "sum(rate(chainorchestra_analytics_service_http_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+          "legendFormat": "analytics-service",
+          "refId": "F"
+        },
+        {
+          "expr": "sum(rate(chainorchestra_notification_service_http_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+          "legendFormat": "notification-service",
+          "refId": "G"
+        }
+      ]
+    },
+    {
+      "title": "P95 Latency per Service",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(chainorchestra_api_gateway_http_request_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "api-gateway",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(chainorchestra_user_service_http_request_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "user-service",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(chainorchestra_order_service_http_request_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "order-service",
+          "refId": "C"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(chainorchestra_inventory_service_http_request_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "inventory-service",
+          "refId": "D"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(chainorchestra_logistics_service_http_request_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "logistics-service",
+          "refId": "E"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(chainorchestra_analytics_service_http_request_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "analytics-service",
+          "refId": "F"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(chainorchestra_notification_service_http_request_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "notification-service",
+          "refId": "G"
+        }
+      ]
+    },
+    {
+      "title": "Requests In-Flight per Service",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "chainorchestra_api_gateway_http_requests_in_flight",
+          "legendFormat": "api-gateway",
+          "refId": "A"
+        },
+        {
+          "expr": "chainorchestra_user_service_http_requests_in_flight",
+          "legendFormat": "user-service",
+          "refId": "B"
+        },
+        {
+          "expr": "chainorchestra_order_service_http_requests_in_flight",
+          "legendFormat": "order-service",
+          "refId": "C"
+        },
+        {
+          "expr": "chainorchestra_inventory_service_http_requests_in_flight",
+          "legendFormat": "inventory-service",
+          "refId": "D"
+        },
+        {
+          "expr": "chainorchestra_logistics_service_http_requests_in_flight",
+          "legendFormat": "logistics-service",
+          "refId": "E"
+        },
+        {
+          "expr": "chainorchestra_analytics_service_http_requests_in_flight",
+          "legendFormat": "analytics-service",
+          "refId": "F"
+        },
+        {
+          "expr": "chainorchestra_notification_service_http_requests_in_flight",
+          "legendFormat": "notification-service",
+          "refId": "G"
+        }
+      ]
+    },
+    {
+      "title": "Request Rate by Method & Path (API Gateway)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "drawStyle": "bars", "lineWidth": 1, "fillOpacity": 50, "stacking": { "mode": "normal" } }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(chainorchestra_api_gateway_http_requests_total[5m])) by (method, path)",
+          "legendFormat": "{{method}} {{path}}",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["chainorchestra", "microservices"],
+  "templating": {
+    "list": [
+      {
+        "current": { "selected": false, "text": "Prometheus", "value": "Prometheus" },
+        "hide": 0,
+        "includeAll": false,
+        "label": "Datasource",
+        "multi": false,
+        "name": "DS_PROMETHEUS",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "datasource"
+      }
+    ]
+  },
+  "time": { "from": "now-1h", "to": "now" },
+  "title": "ChainOrchestra Services",
+  "uid": "chainorchestra-services",
+  "version": 1
+}
