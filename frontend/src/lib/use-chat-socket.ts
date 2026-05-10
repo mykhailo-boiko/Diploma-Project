@@ -123,19 +123,26 @@ export function useChatSocket() {
             streamMsgId.current = null;
             setMessages((prev) => {
               const idx = prev.findIndex((m) => m.id === sid);
-              const finalMsg: ChatMessage = {
-                id: sid,
-                role: "assistant",
-                type: "message",
-                content,
-                timestamp: Date.now(),
-              };
               if (idx >= 0) {
                 const copy = [...prev];
-                copy[idx] = finalMsg;
+                copy[idx] = {
+                  ...copy[idx],
+                  type: "message",
+                  content,
+                  timestamp: Date.now(),
+                };
                 return copy;
               }
-              return [...prev, finalMsg];
+              return [
+                ...prev,
+                {
+                  id: sid,
+                  role: "assistant",
+                  type: "message",
+                  content,
+                  timestamp: Date.now(),
+                },
+              ];
             });
           } else {
             setMessages((prev) => [
