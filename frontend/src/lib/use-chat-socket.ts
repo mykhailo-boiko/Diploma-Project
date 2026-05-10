@@ -12,6 +12,7 @@ export type MessageType =
   | "partial_failure"
   | "stream"
   | "system"
+  | "plan"
   | "error";
 
 export interface ChatMessage {
@@ -20,6 +21,29 @@ export interface ChatMessage {
   type: MessageType;
   content: string;
   timestamp: number;
+  planId?: string;
+}
+
+export interface PlanStep {
+  id: string;
+  tool: string;
+  params: Record<string, unknown>;
+  result: Record<string, unknown> | null;
+  status: "pending" | "running" | "success" | "failed" | "skipped";
+  started_at: string | null;
+  finished_at: string | null;
+  duration_ms: number | null;
+  error: string | null;
+}
+
+export interface ExecutionPlan {
+  id: string;
+  session_id: string;
+  intent: string;
+  steps: PlanStep[];
+  status: "running" | "completed" | "partial_failure" | "failed";
+  created_at: string;
+  finished_at: string | null;
 }
 
 type ConnectionStatus = "connecting" | "connected" | "disconnected";
@@ -35,6 +59,7 @@ function msgId(): string {
 export function useChatSocket() {
   const token = useAuthStore((s) => s.token);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [plans, setPlans] = useState<Record<string, ExecutionPlan>>({});
   const [status, setStatus] = useState<ConnectionStatus>("disconnected");
   const [isThinking, setIsThinking] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
@@ -136,6 +161,26 @@ export function useChatSocket() {
           return;
         }
 
+        if (type === "plan") {
+          try {
+            const plan = JSON.parse(content) as ExecutionPlan;
+            setPlans((prev) => ({ ...prev, [plan.id]: plan }));
+            setMessages((prev) => {
+              const lastAssistantIdx = [...prev].reverse().findIndex(
+                (m) => m.role === "assistant" && (m.type === "message" || m.type === "stream"),
+              );
+              if (lastAssistantIdx < 0) return prev;
+              const idx = prev.length - 1 - lastAssistantIdx;
+              const copy = [...prev];
+              copy[idx] = { ...copy[idx], planId: plan.id };
+              return copy;
+            });
+          } catch {
+            // ignore malformed plan payload
+          }
+          return;
+        }
+
         setIsThinking(false);
         setMessages((prev) => [
           ...prev,
@@ -205,6 +250,7 @@ export function useChatSocket() {
       wsRef.current.send(JSON.stringify({ message: "/clear" }));
     }
     setMessages([]);
+    setPlans({});
   }, []);
 
   useEffect(() => {
@@ -213,6 +259,7 @@ export function useChatSocket() {
 
   return {
     messages,
+    plans,
     status,
     isThinking,
     connect,

@@ -22,6 +22,7 @@ import clsx from "clsx";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useChatSocket, ChatMessage, MessageType } from "@/lib/use-chat-socket";
+import PlanPanel from "@/components/PlanPanel";
 
 interface ChatPanelProps {
   open: boolean;
@@ -209,6 +210,7 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
 export default function ChatPanel({ open, onClose }: ChatPanelProps) {
   const {
     messages,
+    plans,
     status,
     isThinking,
     connect,
@@ -465,7 +467,14 @@ export default function ChatPanel({ open, onClose }: ChatPanelProps) {
             )}
 
             {messages.map((msg) => (
-              <MessageBubble key={msg.id} msg={msg} />
+              <div key={msg.id}>
+                <MessageBubble msg={msg} />
+                {msg.planId && plans[msg.planId] && (
+                  <div className="ml-10 mt-1">
+                    <PlanPanel plan={plans[msg.planId]} />
+                  </div>
+                )}
+              </div>
             ))}
 
             {isThinking && (

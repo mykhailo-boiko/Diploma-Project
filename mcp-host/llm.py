@@ -392,6 +392,11 @@ async def chat_completion(
         if plan and plan_store:
             plan.finalize()
             await plan_store.save(plan)
+            if on_stream and len(plan.steps) > 0:
+                try:
+                    await on_stream("plan", plan.model_dump_json())
+                except Exception as exc:
+                    logger.debug("plan stream failed: %s", exc)
 
 
 def _is_retriable_empty_response(finish_reason: Any, has_content: bool) -> bool:
