@@ -24,16 +24,16 @@ open http://localhost:3000
 | Role              | Email                                   | Password     |
 |-------------------|-----------------------------------------|--------------|
 | Admin             | admin@chainorchestra.local              | admin123     |
-| Operator          | ivan.petrov@chainorchestra.local        | Operator1!   |
-| Warehouse Manager | maria.kuznetsova@chainorchestra.local   | Warehouse1!  |
-| Logistics Manager | alexei.volkov@chainorchestra.local      | Logistics1!  |
-| Analyst           | elena.sokolova@chainorchestra.local     | Analyst1!    |
+| Operator          | ivan.petrenko@chainorchestra.local        | Operator1!   |
+| Warehouse Manager | maria.kovalenko@chainorchestra.local   | Warehouse1!  |
+| Logistics Manager | oleksii.shevchenko@chainorchestra.local      | Logistics1!  |
+| Analyst           | olena.bondarenko@chainorchestra.local     | Analyst1!    |
 
 ---
 
 ## Scenario 1: Operator - Order Lifecycle Management
 
-**Role:** Operator (ivan.petrov@chainorchestra.local / Operator1!)
+**Role:** Operator (ivan.petrenko@chainorchestra.local / Operator1!)
 
 **Goal:** Demonstrate that an operator can create, view, and manage orders through natural language chat.
 
@@ -42,7 +42,7 @@ open http://localhost:3000
 | # | User Input                                                                 | Expected Behavior                                                                                                    |
 |---|---------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------|
 | 1 | `Show me all pending orders`                                              | LLM calls `orders_list` with status=pending. Returns a list of pending orders with customer names, totals, dates.    |
-| 2 | `Create a new order for customer "Dmitry Ivanov" with 5 units of "Wireless Mouse" at 29.99 each and 2 units of "USB-C Hub" at 49.99 each` | LLM calls `orders_create`. Returns order details: status=pending, 2 line items, total_amount=249.93.                 |
+| 2 | `Create a new order for customer "Dmytro Ivanenko" with 5 units of "Wireless Mouse" at 29.99 each and 2 units of "USB-C Hub" at 49.99 each` | LLM calls `orders_create`. Returns order details: status=pending, 2 line items, total_amount=249.93.                 |
 | 3 | `Show me the details of that order`                                       | Multi-turn context: LLM calls `orders_get` with the order ID from step 2. Returns order with items, status, total.  |
 | 4 | `Confirm this order`                                                      | LLM calls `orders_update_status` with status=confirmed. Returns updated order with status=confirmed.                 |
 | 5 | `Now show me the order statistics`                                        | LLM calls `orders_stats`. Returns total_orders, total_revenue, breakdown by status (pending, confirmed, etc.).       |
@@ -58,7 +58,7 @@ open http://localhost:3000
 
 ## Scenario 2: Warehouse Manager - Inventory Monitoring
 
-**Role:** Warehouse Manager (maria.kuznetsova@chainorchestra.local / Warehouse1!)
+**Role:** Warehouse Manager (maria.kovalenko@chainorchestra.local / Warehouse1!)
 
 **Goal:** Demonstrate inventory visibility, low-stock detection, and stock operations.
 
@@ -69,9 +69,9 @@ open http://localhost:3000
 | 1 | `What items are running low on stock?`                        | LLM calls `stock_low`. Returns products below min_threshold with product name, SKU, current quantity, threshold.            |
 | 2 | `Show me the full inventory report`                           | LLM calls `inventory_report`. Returns summary: total products, total quantity, by warehouse breakdown, by category.         |
 | 3 | `List all products in the Electronics category`               | LLM calls `products_list` with category=Electronics. Returns list with names, SKUs, prices.                                 |
-| 4 | `Show stock levels for the Moscow warehouse`                  | LLM calls `stock_list` with warehouse filter. Returns stock entries with quantity, reserved, available for each product.     |
+| 4 | `Show stock levels for the Kyiv warehouse`                  | LLM calls `stock_list` with warehouse filter. Returns stock entries with quantity, reserved, available for each product.     |
 | 5 | `What are the recent stock movements?`                        | LLM calls `stock_movements`. Returns movement log: type (inbound/outbound/reserve/release), quantity, timestamps.           |
-| 6 | `Show me all warehouses and their status`                     | LLM calls `warehouses_list`. Returns 3 warehouses (Moscow, Saint Petersburg, Novosibirsk) with addresses and active status. |
+| 6 | `Show me all warehouses and their status`                     | LLM calls `warehouses_list`. Returns 3 warehouses (Kyiv, Lviv, Odesa) with addresses and active status. |
 
 ### What This Demonstrates
 - Inventory visibility through natural language
@@ -91,11 +91,11 @@ open http://localhost:3000
 
 | # | User Input                                                                                          | Expected Behavior                                                                                              |
 |---|-----------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------|
-| 1 | `Create an order for customer "Natalia Smirnova" with 10 units of "Standing Desk" at 599.99 each`  | LLM calls `orders_create`. Returns order with status=pending, total=5999.90.                                   |
+| 1 | `Create an order for customer "Nataliia Smiian" with 10 units of "Standing Desk" at 599.99 each`  | LLM calls `orders_create`. Returns order with status=pending, total=5999.90.                                   |
 | 2 | `Confirm this order and check if we have enough stock of Standing Desks`                            | Multi-step: LLM calls `orders_update_status` (confirmed) + `stock_list` or `products_list`. Reports both results. |
 | 3 | `Show me available carriers for this shipment`                                                      | LLM calls `carriers_list`. Returns 3 carriers with types and cost_per_km.                                      |
-| 4 | `Calculate a delivery route from Moscow to Novosibirsk using the ground carrier`                    | LLM calls `routes_calculate` with origin, destination, carrier_id. Returns distance, duration, cost.           |
-| 5 | `Send a notification to user ivan.petrov@chainorchestra.local that the order has been confirmed`    | LLM calls `notifications_create`. Returns created notification with type and content.                          |
+| 4 | `Calculate a delivery route from Kyiv to Odesa using the ground carrier`                    | LLM calls `routes_calculate` with origin, destination, carrier_id. Returns distance, duration, cost.           |
+| 5 | `Send a notification to user ivan.petrenko@chainorchestra.local that the order has been confirmed`    | LLM calls `notifications_create`. Returns created notification with type and content.                          |
 | 6 | `Give me a summary: how many orders do we have and what's the overall revenue?`                     | LLM calls `orders_stats`. Returns aggregated statistics across all orders.                                     |
 
 ### What This Demonstrates
@@ -109,7 +109,7 @@ open http://localhost:3000
 
 ## Scenario 4: Analyst - Reports and Anomaly Detection
 
-**Role:** Analyst (elena.sokolova@chainorchestra.local / Analyst1!)
+**Role:** Analyst (olena.bondarenko@chainorchestra.local / Analyst1!)
 
 **Goal:** Demonstrate analytics capabilities: sales trends, anomaly detection, optimization recommendations.
 
@@ -139,7 +139,7 @@ open http://localhost:3000
 
 **Goal:** Demonstrate that RBAC prevents unauthorized access through the MCP chat interface.
 
-### Part A: Operator (ivan.petrov@chainorchestra.local / Operator1!)
+### Part A: Operator (ivan.petrenko@chainorchestra.local / Operator1!)
 
 | # | User Input                                      | Expected Behavior                                                                                      |
 |---|-------------------------------------------------|--------------------------------------------------------------------------------------------------------|
