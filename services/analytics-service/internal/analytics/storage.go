@@ -186,6 +186,78 @@ func (s *PostgresStorage) GetInventorySnapshots(ctx context.Context, from, to ti
 	return results, nil
 }
 
+func (s *PostgresStorage) GetMetricValue(ctx context.Context, metric string, from, to time.Time) (float64, error) {
+	var query string
+	switch metric {
+	case "revenue":
+		query = `
+			SELECT COALESCE(SUM(total_amount), 0)::float8
+			FROM orders.orders
+			WHERE deleted_at IS NULL
+				AND status NOT IN ('cancelled','returned')
+				AND created_at >= $1 AND created_at <= $2`
+	case "order_count":
+		query = `
+			SELECT COUNT(*)::float8
+			FROM orders.orders
+			WHERE deleted_at IS NULL
+				AND status NOT IN ('cancelled','returned')
+				AND created_at >= $1 AND created_at <= $2`
+	case "aov":
+		query = `
+			SELECT COALESCE(AVG(total_amount), 0)::float8
+			FROM orders.orders
+			WHERE deleted_at IS NULL
+				AND status NOT IN ('cancelled','returned')
+				AND created_at >= $1 AND created_at <= $2`
+	case "cancellation_rate":
+		query = `
+			SELECT COALESCE(
+				100.0 * COUNT(*) FILTER (WHERE status = 'cancelled')::float8
+				/ NULLIF(COUNT(*), 0)::float8,
+			0)::float8
+			FROM orders.orders
+			WHERE deleted_at IS NULL
+				AND created_at >= $1 AND created_at <= $2`
+	case "on_time_rate":
+		query = `
+			SELECT COALESCE(
+				100.0 * COUNT(*) FILTER (
+					WHERE status = 'delivered'
+					AND EXTRACT(EPOCH FROM (updated_at - created_at))/3600 <= 168
+				)::float8
+				/ NULLIF(COUNT(*) FILTER (WHERE status = 'delivered'), 0)::float8,
+			0)::float8
+			FROM logistics.shipment
+			WHERE deleted_at IS NULL
+				AND created_at >= $1 AND created_at <= $2`
+	case "shipment_count":
+		query = `
+			SELECT COUNT(*)::float8
+			FROM logistics.shipment
+			WHERE deleted_at IS NULL
+				AND created_at >= $1 AND created_at <= $2`
+	case "low_stock_count":
+		query = `
+			SELECT COUNT(*)::float8
+			FROM inventory.stock
+			WHERE quantity < min_threshold AND min_threshold > 0`
+		var v float64
+		if err := s.pool.QueryRow(ctx, query).Scan(&v); err != nil {
+			return 0, fmt.Errorf("failed to query metric %s: %w", metric, err)
+		}
+		return v, nil
+	default:
+		return 0, fmt.Errorf("unsupported metric: %s (supported: revenue, order_count, aov, cancellation_rate, on_time_rate, shipment_count, low_stock_count)", metric)
+	}
+
+	var v float64
+	if err := s.pool.QueryRow(ctx, query, from, to).Scan(&v); err != nil {
+		return 0, fmt.Errorf("failed to query metric %s: %w", metric, err)
+	}
+	return v, nil
+}
+
 func (s *PostgresStorage) GetCustomerProfile360(ctx context.Context, customerName string, recentN int, topCategoriesN int) (CustomerProfile360, error) {
 	if recentN <= 0 {
 		recentN = 5

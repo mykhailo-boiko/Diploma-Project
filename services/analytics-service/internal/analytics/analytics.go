@@ -111,6 +111,23 @@ type Report struct {
 	Data       any    `json:"data"`
 }
 
+type PeriodSnapshot struct {
+	Label string    `json:"label"`
+	From  time.Time `json:"from"`
+	To    time.Time `json:"to"`
+	Value float64   `json:"value"`
+}
+
+type PeriodComparison struct {
+	Metric        string         `json:"metric"`
+	PeriodA       PeriodSnapshot `json:"period_a"`
+	PeriodB       PeriodSnapshot `json:"period_b"`
+	AbsoluteDelta float64        `json:"absolute_delta"`
+	PercentChange float64        `json:"percent_change"`
+	Direction     string         `json:"direction"`
+	Significance  string         `json:"significance"`
+}
+
 type CategorySpend struct {
 	Category  string  `json:"category"`
 	Revenue   float64 `json:"revenue"`
@@ -208,6 +225,7 @@ type Storage interface {
 	GetRebalancingRecommendations(ctx context.Context, params RebalancingParams) ([]RebalancingRecommendation, error)
 	GetCarrierPerformance(ctx context.Context, from, to time.Time, slaHours int, worstCitiesPerCarrier int) ([]CarrierPerformance, error)
 	GetCustomerProfile360(ctx context.Context, customerName string, recentN int, topCategoriesN int) (CustomerProfile360, error)
+	GetMetricValue(ctx context.Context, metric string, from, to time.Time) (float64, error)
 }
 
 var ErrCustomerNotFound = errors.New("customer not found")

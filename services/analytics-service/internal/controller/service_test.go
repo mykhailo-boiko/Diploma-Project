@@ -115,6 +115,10 @@ func (m *mockStorage) GetCustomerProfile360(_ context.Context, _ string, _ int, 
 	return analytics.CustomerProfile360{}, nil
 }
 
+func (m *mockStorage) GetMetricValue(_ context.Context, _ string, _, _ time.Time) (float64, error) {
+	return 0, nil
+}
+
 func (m *mockStorage) GetCarrierPerformance(_ context.Context, _, _ time.Time, _ int, _ int) ([]analytics.CarrierPerformance, error) {
 	return []analytics.CarrierPerformance{}, nil
 }

@@ -349,6 +349,67 @@ func (s *Service) GetCustomerProfile360(ctx context.Context, customerName string
 	return s.storage.GetCustomerProfile360(ctx, customerName, recentN, topCategoriesN)
 }
 
+func (s *Service) GetPeriodComparison(
+	ctx context.Context, metric string,
+	aFrom, aTo, bFrom, bTo time.Time,
+	aLabel, bLabel string,
+) (analytics.PeriodComparison, error) {
+	aVal, err := s.storage.GetMetricValue(ctx, metric, aFrom, aTo)
+	if err != nil {
+		return analytics.PeriodComparison{}, err
+	}
+	bVal, err := s.storage.GetMetricValue(ctx, metric, bFrom, bTo)
+	if err != nil {
+		return analytics.PeriodComparison{}, err
+	}
+
+	if aLabel == "" {
+		aLabel = aFrom.Format("2006-01-02") + " — " + aTo.Format("2006-01-02")
+	}
+	if bLabel == "" {
+		bLabel = bFrom.Format("2006-01-02") + " — " + bTo.Format("2006-01-02")
+	}
+
+	delta := bVal - aVal
+	pct := 0.0
+	if aVal != 0 {
+		pct = (delta / aVal) * 100.0
+	}
+
+	direction := "flat"
+	if delta > 0 {
+		direction = "up"
+	} else if delta < 0 {
+		direction = "down"
+	}
+
+	absPct := pct
+	if absPct < 0 {
+		absPct = -absPct
+	}
+	significance := "noise"
+	switch {
+	case absPct >= 15.0:
+		significance = "major"
+	case absPct >= 5.0:
+		significance = "minor"
+	}
+
+	return analytics.PeriodComparison{
+		Metric: metric,
+		PeriodA: analytics.PeriodSnapshot{
+			Label: aLabel, From: aFrom, To: aTo, Value: aVal,
+		},
+		PeriodB: analytics.PeriodSnapshot{
+			Label: bLabel, From: bFrom, To: bTo, Value: bVal,
+		},
+		AbsoluteDelta: delta,
+		PercentChange: pct,
+		Direction:     direction,
+		Significance:  significance,
+	}, nil
+}
+
 func (s *Service) GetOptimizations(ctx context.Context, from, to time.Time) ([]analytics.Optimization, error) {
 	salesRecords, err := s.storage.GetSalesDaily(ctx, from, to)
 	if err != nil {

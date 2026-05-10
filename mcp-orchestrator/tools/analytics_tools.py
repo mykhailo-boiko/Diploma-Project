@@ -143,6 +143,55 @@ def register(mcp: FastMCP) -> None:
         })
 
     @mcp.tool()
+    async def analytics_period_comparison(
+        metric: str,
+        a_from: str,
+        a_to: str,
+        b_from: str,
+        b_to: str,
+        a_label: str | None = None,
+        b_label: str | None = None,
+    ) -> dict[str, Any]:
+        """Compare a metric between TWO arbitrary date windows. Returns both values, absolute and
+        percent delta, direction, and a qualitative significance label.
+
+        Use for ANY "X vs Y" question: this month vs last, this Q vs same Q last year, week-over-week,
+        before-and-after a campaign, etc. The model should ALWAYS compute concrete YYYY-MM-DD dates
+        for both windows itself — do not pass quarter/month names.
+
+        Supported metrics:
+            - revenue: sum of total_amount for non-cancelled/non-returned orders in window
+            - order_count: count of non-cancelled/non-returned orders
+            - aov: average order value
+            - cancellation_rate: % of orders in window that ended up cancelled
+            - on_time_rate: % of delivered shipments within 168h SLA
+            - shipment_count: count of shipments created in window
+            - low_stock_count: current count (window-independent; both periods will return the same)
+
+        Returns:
+            {metric, period_a:{label,from,to,value}, period_b:{label,from,to,value},
+             absolute_delta, percent_change, direction: up|down|flat,
+             significance: major|minor|noise}
+        Significance thresholds: |percent_change| >= 15% = major, >= 5% = minor, otherwise noise.
+
+        Args:
+            metric: One of the supported metrics above.
+            a_from, a_to: Baseline (period A) window in YYYY-MM-DD inclusive.
+            b_from, b_to: Comparison (period B) window in YYYY-MM-DD inclusive.
+            a_label, b_label: Optional human-readable labels (e.g. "Q1 2026" / "Q4 2025").
+        """
+        params: dict[str, Any] = {
+            "metric": metric,
+            "a_from": a_from, "a_to": a_to,
+            "b_from": b_from, "b_to": b_to,
+        }
+        if a_label:
+            params["a_label"] = a_label
+        if b_label:
+            params["b_label"] = b_label
+        return await api_get("/api/v1/analytics/period-comparison", params)
+
+    @mcp.tool()
     async def customers_profile_360(
         customer_name: str,
         recent_n: int = 5,

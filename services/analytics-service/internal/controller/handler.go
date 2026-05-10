@@ -29,6 +29,7 @@ type AnalyticsService interface {
 	GetRebalancingRecommendations(ctx context.Context, params analytics.RebalancingParams) ([]analytics.RebalancingRecommendation, error)
 	GetCarrierPerformance(ctx context.Context, from, to time.Time, slaHours int, worstCitiesPerCarrier int) ([]analytics.CarrierPerformance, error)
 	GetCustomerProfile360(ctx context.Context, customerName string, recentN int, topCategoriesN int) (analytics.CustomerProfile360, error)
+	GetPeriodComparison(ctx context.Context, metric string, aFrom, aTo, bFrom, bTo time.Time, aLabel, bLabel string) (analytics.PeriodComparison, error)
 }
 
 type AnalyticsController struct {
@@ -243,6 +244,60 @@ func (c *AnalyticsController) GenerateReport(w http.ResponseWriter, r *http.Requ
 	}
 
 	httpresponse.OK(w, report)
+}
+
+func (c *AnalyticsController) GetPeriodComparison(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+
+	metric := q.Get("metric")
+	if metric == "" {
+		httpresponse.BadRequest(w, "validation_error", "metric is required")
+		return
+	}
+
+	aFromStr := q.Get("a_from")
+	aToStr := q.Get("a_to")
+	bFromStr := q.Get("b_from")
+	bToStr := q.Get("b_to")
+	if aFromStr == "" || aToStr == "" || bFromStr == "" || bToStr == "" {
+		httpresponse.BadRequest(w, "validation_error", "a_from, a_to, b_from, b_to are required (YYYY-MM-DD)")
+		return
+	}
+
+	aFrom, err := time.Parse("2006-01-02", aFromStr)
+	if err != nil {
+		httpresponse.BadRequest(w, "validation_error", "invalid a_from")
+		return
+	}
+	aTo, err := time.Parse("2006-01-02", aToStr)
+	if err != nil {
+		httpresponse.BadRequest(w, "validation_error", "invalid a_to")
+		return
+	}
+	bFrom, err := time.Parse("2006-01-02", bFromStr)
+	if err != nil {
+		httpresponse.BadRequest(w, "validation_error", "invalid b_from")
+		return
+	}
+	bTo, err := time.Parse("2006-01-02", bToStr)
+	if err != nil {
+		httpresponse.BadRequest(w, "validation_error", "invalid b_to")
+		return
+	}
+	aTo = aTo.Add(24*time.Hour - time.Second)
+	bTo = bTo.Add(24*time.Hour - time.Second)
+
+	aLabel := q.Get("a_label")
+	bLabel := q.Get("b_label")
+
+	result, err := c.svc.GetPeriodComparison(r.Context(), metric, aFrom, aTo, bFrom, bTo, aLabel, bLabel)
+	if err != nil {
+		c.log.Error("Failed to compute period comparison", zap.Error(err))
+		httpresponse.BadRequest(w, "internal_error", err.Error())
+		return
+	}
+
+	httpresponse.OK(w, result)
 }
 
 func (c *AnalyticsController) GetCustomerProfile360(w http.ResponseWriter, r *http.Request) {
