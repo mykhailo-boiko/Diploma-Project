@@ -6,7 +6,7 @@ Enterprise-grade supply chain management platform with an AI orchestration layer
 
 - **6 microservices** (Go): Orders, Inventory, Logistics, Analytics, Notifications, Users
 - **API Gateway** with JWT authentication, RBAC, rate limiting, CORS
-- **MCP Orchestrator** (Python/FastMCP): 63 tools spanning all business domains
+- **MCP Orchestrator** (Python/FastMCP): 76 tools spanning all business domains
 - **MCP Host** (Python/FastAPI): WebSocket chat with Google Gemini LLM integration
 - **Frontend** (Next.js 16, React 19, TypeScript): role-aware dashboard, data tables, charts, real-time chat
 - **Event-driven architecture**: NATS for inter-service communication
@@ -14,42 +14,68 @@ Enterprise-grade supply chain management platform with an AI orchestration layer
 
 ## Architecture
 
-```
-                        ┌─────────────┐
-                        │   Frontend   │ :3000
-                        │  (Next.js)   │
-                        └──────┬───────┘
-                               │
-                  ┌────────────┴────────────┐
-                  │                         │
-           ┌──────┴──────┐          ┌───────┴──────┐
-           │ API Gateway │ :8080    │   MCP Host   │ :8090
-           │  (JWT/RBAC) │          │  (WebSocket) │
-           └──────┬──────┘          └───────┬──────┘
-                  │                         │
-    ┌─────────────┼─────────────┐    ┌──────┴──────┐
-    │      │      │      │      │    │     MCP     │
-    │      │      │      │      │    │ Orchestrator│
-    ▼      ▼      ▼      ▼      ▼    │  (FastMCP)  │
-  User   Order  Inv.  Logis. Notif.  └──────┬──────┘
-  :8001  :8002  :8003  :8004  :8006         │
-    │      │      │      │      │     calls via HTTP
-    └──────┴──────┴──────┴──────┘           │
-           │             │           ┌──────┴──────┐
-    ┌──────┴──────┐  ┌───┴───┐      │ API Gateway │
-    │ PostgreSQL  │  │ NATS  │      └─────────────┘
-    │   :5432     │  │ :4222 │
-    └─────────────┘  └───────┘
-           │
-    ┌──────┴──────┐
-    │   Redis     │
-    │   :6379     │
-    └─────────────┘
+```mermaid
+flowchart TB
+    User([👤 User])
 
-  Analytics service (:8005) also connected — omitted for clarity
+    subgraph edge["Edge"]
+        Frontend["Frontend<br/>Next.js · :3000"]
+    end
+
+    subgraph gateway["Gateway layer"]
+        APIGW["API Gateway<br/>JWT · RBAC · rate-limit<br/>:8080"]
+        MCPHost["MCP Host<br/>WebSocket · Gemini<br/>:8090"]
+    end
+
+    subgraph ai["AI orchestration"]
+        MCPOrch["MCP Orchestrator<br/>FastMCP · 76 tools<br/>stdio subprocess"]
+    end
+
+    subgraph svc["Microservices (Go)"]
+        US["User · :8001"]
+        OS["Order · :8002"]
+        IS["Inventory · :8003"]
+        LS["Logistics · :8004"]
+        AS["Analytics · :8005"]
+        NS["Notification · :8006"]
+    end
+
+    subgraph data["Data plane"]
+        PG[("PostgreSQL 16<br/>6 schemas · :5432")]
+        NATS{{"NATS 2 + JetStream<br/>:4222"}}
+        Redis[("Redis 7<br/>:6379")]
+    end
+
+    User --> Frontend
+    Frontend -- REST --> APIGW
+    Frontend -- WebSocket --> MCPHost
+    MCPHost -- stdio JSON-RPC --> MCPOrch
+    MCPOrch -- HTTP --> APIGW
+
+    APIGW --> US
+    APIGW --> OS
+    APIGW --> IS
+    APIGW --> LS
+    APIGW --> AS
+    APIGW --> NS
+
+    US --> PG
+    OS --> PG
+    IS --> PG
+    LS --> PG
+    AS --> PG
+    NS --> PG
+
+    OS -. events .-> NATS
+    IS -. events .-> NATS
+    LS -. events .-> NATS
+    NATS -. subscribe .-> AS
+    NATS -. subscribe .-> NS
+
+    MCPHost --> Redis
 ```
 
-For a detailed Mermaid diagram, see [docs/architecture.md](docs/architecture.md).
+For an extended diagram with sequence flows, see [docs/architecture.md](docs/architecture.md).
 
 ## Quick Start
 
@@ -184,7 +210,7 @@ chainorchestra/
 
 - [Architecture Diagram](docs/architecture.md) — system components and data flow (Mermaid)
 - [API Reference](docs/api-reference.md) — all REST endpoints per service
-- [MCP Tools Reference](docs/mcp-tools.md) — complete catalog of 63 MCP tools
+- [MCP Tools Reference](docs/mcp-tools.md) — complete catalog of 76 MCP tools
 
 ## Running Tests
 
@@ -233,13 +259,34 @@ See [.env.example](.env.example) for the complete reference. Key variables:
 
 ## NATS Event Flow
 
-```
-order.created          → analytics, notifications
-order.status_changed   → logistics (auto-shipment), analytics, notifications
-order.cancelled        → inventory (release stock), analytics, notifications
-inventory.stock_changed → analytics
-inventory.low_stock    → analytics, notifications
-logistics.shipment_*   → analytics, notifications
+```mermaid
+flowchart LR
+    OS["Order service"]:::svc
+    IS["Inventory service"]:::svc
+    LS["Logistics service"]:::svc
+    AS["Analytics"]:::cons
+    NS["Notifications"]:::cons
+    INV["Inventory<br/>(release stock)"]:::cons
+    LOG["Logistics<br/>(auto-shipment)"]:::cons
+
+    OS -- order.created --> AS
+    OS -- order.created --> NS
+    OS -- order.status_changed --> LOG
+    OS -- order.status_changed --> AS
+    OS -- order.status_changed --> NS
+    OS -- order.cancelled --> INV
+    OS -- order.cancelled --> AS
+    OS -- order.cancelled --> NS
+
+    IS -- inventory.stock_changed --> AS
+    IS -- inventory.low_stock --> AS
+    IS -- inventory.low_stock --> NS
+
+    LS -- logistics.shipment_* --> AS
+    LS -- logistics.shipment_* --> NS
+
+    classDef svc fill:#dbe9ff,stroke:#3b6fd9,stroke-width:1px,color:#1c3d80
+    classDef cons fill:#e8f5e9,stroke:#43a047,stroke-width:1px,color:#1b5e20
 ```
 
 ## License
