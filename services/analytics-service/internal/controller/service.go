@@ -217,11 +217,64 @@ func (s *Service) DetectAnomalies(ctx context.Context, from, to time.Time) ([]an
 
 	anomalies = append(anomalies, s.detectInventoryAnomalies(invRecords)...)
 
+	if len(salesRecords) >= 7 {
+		anomalies = append(anomalies, s.detectBusinessAnomalies(salesRecords)...)
+	}
+
 	if anomalies == nil {
 		anomalies = []analytics.Anomaly{}
 	}
 
 	return anomalies, nil
+}
+
+func (s *Service) detectBusinessAnomalies(records []analytics.SalesDaily) []analytics.Anomaly {
+	var anomalies []analytics.Anomaly
+
+	var sumAOV, sumAOVSq float64
+	var aovCount int
+	for _, r := range records {
+		if r.TotalOrders > 0 {
+			aov := r.TotalRevenue / float64(r.TotalOrders)
+			sumAOV += aov
+			sumAOVSq += aov * aov
+			aovCount++
+		}
+	}
+	if aovCount >= 5 {
+		mean := sumAOV / float64(aovCount)
+		stddev := math.Sqrt(sumAOVSq/float64(aovCount) - mean*mean)
+		if stddev > 0 {
+			for _, r := range records {
+				if r.TotalOrders == 0 {
+					continue
+				}
+				aov := r.TotalRevenue / float64(r.TotalOrders)
+				deviation := mean - aov
+				if deviation > 2*stddev {
+					severity := "warning"
+					if deviation > 3*stddev {
+						severity = "critical"
+					}
+					anomalies = append(anomalies, analytics.Anomaly{
+						Category:  "business",
+						Type:      "aov_drop",
+						Metric:    "avg_order_value",
+						Value:     aov,
+						Threshold: mean - 2*stddev,
+						Date:      r.Date.Format("2006-01-02"),
+						Severity:  severity,
+						Message: fmt.Sprintf(
+							"Average order value %.2f dropped %.1fσ below the %d-day mean %.2f",
+							aov, deviation/stddev, len(records), mean,
+						),
+					})
+				}
+			}
+		}
+	}
+
+	return anomalies
 }
 
 func (s *Service) detectSalesAnomalies(records []analytics.SalesDaily) []analytics.Anomaly {
@@ -246,6 +299,7 @@ func (s *Service) detectSalesAnomalies(records []analytics.SalesDaily) []analyti
 					severity = "critical"
 				}
 				anomalies = append(anomalies, analytics.Anomaly{
+					Category:  "sales",
 					Type:      "sales",
 					Metric:    "total_revenue",
 					Value:     r.TotalRevenue,
@@ -261,6 +315,7 @@ func (s *Service) detectSalesAnomalies(records []analytics.SalesDaily) []analyti
 	for _, r := range records {
 		if r.TotalOrders == 0 {
 			anomalies = append(anomalies, analytics.Anomaly{
+				Category:  "sales",
 				Type:      "sales",
 				Metric:    "total_orders",
 				Value:     0,
@@ -283,6 +338,7 @@ func (s *Service) detectLogisticsAnomalies(records []analytics.LogisticsDaily) [
 			failRate := float64(r.FailedCount) / float64(r.TotalShipments) * 100
 			if failRate > 20 {
 				anomalies = append(anomalies, analytics.Anomaly{
+					Category:  "logistics",
 					Type:      "logistics",
 					Metric:    "failure_rate",
 					Value:     failRate,
@@ -296,6 +352,7 @@ func (s *Service) detectLogisticsAnomalies(records []analytics.LogisticsDaily) [
 
 		if r.OnTimeRate > 0 && r.OnTimeRate < 80 {
 			anomalies = append(anomalies, analytics.Anomaly{
+				Category:  "logistics",
 				Type:      "logistics",
 				Metric:    "on_time_rate",
 				Value:     r.OnTimeRate,
@@ -318,6 +375,7 @@ func (s *Service) detectInventoryAnomalies(records []analytics.InventorySnapshot
 			lowStockPct := float64(r.LowStockCount) / float64(r.TotalProducts) * 100
 			if lowStockPct > 10 {
 				anomalies = append(anomalies, analytics.Anomaly{
+					Category:  "inventory",
 					Type:      "inventory",
 					Metric:    "low_stock_percentage",
 					Value:     lowStockPct,

@@ -128,9 +128,15 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool()
     async def analytics_anomalies(date_from: str, date_to: str) -> dict[str, Any]:
-        """Detect anomalies in sales, inventory, and logistics using rule-based thresholds.
+        """Detect anomalies across four domains via rule-based thresholds:
+        - sales: revenue >2σ above mean, zero-order days
+        - logistics: failure rate >20%, on-time rate <80%
+        - inventory: low-stock products >10% of catalog
+        - business: AOV drop >2σ below recent mean
 
-        Returns items with severity (warning|critical) and category (sales|inventory|logistics|business).
+        Returns items with category (sales|inventory|logistics|business), type, severity (warning|critical),
+        metric, value, threshold, date, and human-readable message.
+
         For drill-down of a specific anomaly day, use analytics_period_comparison and orders_list.
         Also see: analytics_quick_cancellations (carrier-handover anomalies), orders_customer_summary.
 

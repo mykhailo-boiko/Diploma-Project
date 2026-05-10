@@ -77,6 +77,7 @@ type LogisticsPerformance struct {
 }
 
 type Anomaly struct {
+	Category  string  `json:"category"`
 	Type      string  `json:"type"`
 	Metric    string  `json:"metric"`
 	Value     float64 `json:"value"`
