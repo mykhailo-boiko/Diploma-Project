@@ -78,8 +78,8 @@ func (m *mockShipmentStorage) UpdateShipmentStatus(_ context.Context, id string,
 	return s, nil
 }
 
-func (m *mockShipmentStorage) ReassignCarrierByCity(_ context.Context, _, _, _ string, _ []shipment.Status) (shipment.ReassignResult, error) {
-	return shipment.ReassignResult{}, nil
+func (m *mockShipmentStorage) ReassignCarrierByCity(_ context.Context, _, _, _ string, _ []shipment.Status, dryRun bool) (shipment.ReassignResult, error) {
+	return shipment.ReassignResult{DryRun: dryRun}, nil
 }
 
 type mockCarrierStorage struct {

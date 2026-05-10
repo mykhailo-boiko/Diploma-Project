@@ -132,10 +132,13 @@ func (s *Service) GetCustomerSummary(ctx context.Context, filter order.CustomerF
 	return s.storage.GetCustomerSummary(ctx, filter)
 }
 
-func (s *Service) BulkUpdateStatus(ctx context.Context, orderIDs []string, newStatus order.Status, note string) (order.BulkStatusResult, error) {
-	result, err := s.storage.BulkUpdateStatus(ctx, orderIDs, newStatus, note)
+func (s *Service) BulkUpdateStatus(ctx context.Context, orderIDs []string, newStatus order.Status, note string, dryRun bool) (order.BulkStatusResult, error) {
+	result, err := s.storage.BulkUpdateStatus(ctx, orderIDs, newStatus, note, dryRun)
 	if err != nil {
 		return order.BulkStatusResult{}, err
+	}
+	if dryRun {
+		return result, nil
 	}
 	for _, item := range result.Successes {
 		ord, getErr := s.storage.GetOrderByID(ctx, item.OrderID)

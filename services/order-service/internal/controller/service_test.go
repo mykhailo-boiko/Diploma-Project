@@ -144,8 +144,8 @@ func (m *mockStorage) GetCustomerSummary(_ context.Context, _ order.CustomerFilt
 	return []order.CustomerSummary{}, nil
 }
 
-func (m *mockStorage) BulkUpdateStatus(_ context.Context, ids []string, _ order.Status, _ string) (order.BulkStatusResult, error) {
-	return order.BulkStatusResult{Total: len(ids)}, nil
+func (m *mockStorage) BulkUpdateStatus(_ context.Context, ids []string, _ order.Status, _ string, dryRun bool) (order.BulkStatusResult, error) {
+	return order.BulkStatusResult{Total: len(ids), DryRun: dryRun}, nil
 }
 
 func newTestService() (*Service, *mockStorage) {

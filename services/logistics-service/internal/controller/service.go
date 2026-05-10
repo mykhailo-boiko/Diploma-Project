@@ -154,8 +154,8 @@ func (s *Service) ListCarriers(ctx context.Context, filter carrier.Filter, sort 
 	return s.carriers.ListCarriers(ctx, filter, sort, page)
 }
 
-func (s *Service) ReassignCarrierByCity(ctx context.Context, fromCarrierID, toCarrierID, city string, statuses []shipment.Status) (shipment.ReassignResult, error) {
-	result, err := s.shipments.ReassignCarrierByCity(ctx, fromCarrierID, toCarrierID, city, statuses)
+func (s *Service) ReassignCarrierByCity(ctx context.Context, fromCarrierID, toCarrierID, city string, statuses []shipment.Status, dryRun bool) (shipment.ReassignResult, error) {
+	result, err := s.shipments.ReassignCarrierByCity(ctx, fromCarrierID, toCarrierID, city, statuses, dryRun)
 	if err != nil {
 		return shipment.ReassignResult{}, err
 	}

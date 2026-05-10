@@ -68,6 +68,7 @@ var (
 
 type ReassignResult struct {
 	Total           int      `json:"total"`
+	DryRun          bool     `json:"dry_run"`
 	ReassignedIDs   []string `json:"reassigned_ids"`
 	FromCarrierID   string   `json:"from_carrier_id"`
 	ToCarrierID     string   `json:"to_carrier_id"`
@@ -81,5 +82,5 @@ type Storage interface {
 	GetShipmentByID(ctx context.Context, id string) (Shipment, error)
 	ListShipments(ctx context.Context, filter Filter, sort pagination.Sort, page pagination.Page) ([]Shipment, int, error)
 	UpdateShipmentStatus(ctx context.Context, id string, status Status) (Shipment, error)
-	ReassignCarrierByCity(ctx context.Context, fromCarrierID, toCarrierID, city string, statuses []Status) (ReassignResult, error)
+	ReassignCarrierByCity(ctx context.Context, fromCarrierID, toCarrierID, city string, statuses []Status, dryRun bool) (ReassignResult, error)
 }

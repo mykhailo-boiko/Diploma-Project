@@ -98,6 +98,7 @@ def register(mcp: FastMCP) -> None:
         order_ids: list[str],
         status: str,
         note: str | None = None,
+        dry_run: bool = False,
     ) -> dict[str, Any]:
         """Update status for many orders in ONE server-side call. Validates each transition,
         skips invalid ones, and returns a per-order success/failure report. Use this whenever
@@ -118,8 +119,12 @@ def register(mcp: FastMCP) -> None:
                 invalid transitions land in 'failures', not 'successes'.
             note: Optional service comment stored on each updated order (e.g.
                 "stalled — needs review"). Persisted to cancel_reason field.
+            dry_run: When True, validates every transition and reports what WOULD happen
+                (same response shape, with dry_run=true) without writing anything. ALWAYS
+                use dry_run=true first when affecting more than 5-10 orders, then ask the
+                user to confirm before re-running with dry_run=false.
         """
-        body: dict[str, Any] = {"order_ids": order_ids, "status": status}
+        body: dict[str, Any] = {"order_ids": order_ids, "status": status, "dry_run": dry_run}
         if note:
             body["note"] = note
         return await api_post("/api/v1/orders/bulk-status", body)

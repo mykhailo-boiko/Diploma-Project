@@ -101,6 +101,7 @@ type BulkStatusItem struct {
 
 type BulkStatusResult struct {
 	Total      int              `json:"total"`
+	DryRun     bool             `json:"dry_run"`
 	UpdatedIDs []string         `json:"updated_ids"`
 	Successes  []BulkStatusItem `json:"successes"`
 	Failures   []BulkStatusItem `json:"failures"`
@@ -152,5 +153,5 @@ type Storage interface {
 	GetOrderStats(ctx context.Context) (OrderStats, error)
 	GetSalesByProduct(ctx context.Context, from, to time.Time, includeStatuses []Status) ([]ProductSales, error)
 	GetCustomerSummary(ctx context.Context, filter CustomerFilter) ([]CustomerSummary, error)
-	BulkUpdateStatus(ctx context.Context, orderIDs []string, newStatus Status, note string) (BulkStatusResult, error)
+	BulkUpdateStatus(ctx context.Context, orderIDs []string, newStatus Status, note string, dryRun bool) (BulkStatusResult, error)
 }

@@ -29,7 +29,7 @@ type LogisticsService interface {
 	CalculateRoute(ctx context.Context, req CalculateRouteRequest) (route.Route, error)
 	GetPerformance(ctx context.Context) (PerformanceStats, error)
 	BulkUpdateStatus(ctx context.Context, updates []BulkStatusItem) []BulkStatusResult
-	ReassignCarrierByCity(ctx context.Context, fromCarrierID, toCarrierID, city string, statuses []shipment.Status) (shipment.ReassignResult, error)
+	ReassignCarrierByCity(ctx context.Context, fromCarrierID, toCarrierID, city string, statuses []shipment.Status, dryRun bool) (shipment.ReassignResult, error)
 }
 
 type LogisticsController struct {
@@ -329,6 +329,7 @@ func (c *LogisticsController) ReassignCarrier(w http.ResponseWriter, r *http.Req
 		ToCarrierID   string   `json:"to_carrier_id"`
 		City          string   `json:"city"`
 		Statuses      []string `json:"statuses"`
+		DryRun        bool     `json:"dry_run"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpresponse.BadRequest(w, "invalid_request", "invalid request body")
@@ -348,7 +349,7 @@ func (c *LogisticsController) ReassignCarrier(w http.ResponseWriter, r *http.Req
 		statuses = append(statuses, shipment.Status(s))
 	}
 
-	result, err := c.svc.ReassignCarrierByCity(r.Context(), req.FromCarrierID, req.ToCarrierID, req.City, statuses)
+	result, err := c.svc.ReassignCarrierByCity(r.Context(), req.FromCarrierID, req.ToCarrierID, req.City, statuses, req.DryRun)
 	if err != nil {
 		c.log.Error("Failed to reassign carrier", zap.Error(err))
 		httpresponse.InternalError(w, "internal_error", "internal server error")

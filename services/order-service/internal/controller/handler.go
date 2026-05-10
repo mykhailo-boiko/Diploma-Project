@@ -26,7 +26,7 @@ type OrderService interface {
 	GetOrderStats(ctx context.Context) (order.OrderStats, error)
 	GetSalesByProduct(ctx context.Context, from, to time.Time, includeStatuses []order.Status) ([]order.ProductSales, error)
 	GetCustomerSummary(ctx context.Context, filter order.CustomerFilter) ([]order.CustomerSummary, error)
-	BulkUpdateStatus(ctx context.Context, orderIDs []string, newStatus order.Status, note string) (order.BulkStatusResult, error)
+	BulkUpdateStatus(ctx context.Context, orderIDs []string, newStatus order.Status, note string, dryRun bool) (order.BulkStatusResult, error)
 }
 
 type OrderController struct {
@@ -293,6 +293,7 @@ func (c *OrderController) BulkUpdateStatus(w http.ResponseWriter, r *http.Reques
 		OrderIDs []string `json:"order_ids"`
 		Status   string   `json:"status"`
 		Note     string   `json:"note"`
+		DryRun   bool     `json:"dry_run"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpresponse.BadRequest(w, "invalid_request", "invalid request body")
@@ -312,7 +313,7 @@ func (c *OrderController) BulkUpdateStatus(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	result, err := c.svc.BulkUpdateStatus(r.Context(), req.OrderIDs, order.Status(req.Status), req.Note)
+	result, err := c.svc.BulkUpdateStatus(r.Context(), req.OrderIDs, order.Status(req.Status), req.Note, req.DryRun)
 	if err != nil {
 		c.log.Error("Failed bulk status update", zap.Error(err))
 		httpresponse.InternalError(w, "internal_error", "internal server error")

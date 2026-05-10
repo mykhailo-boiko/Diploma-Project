@@ -189,6 +189,7 @@ def register(mcp: FastMCP) -> None:
         to_carrier_id: str,
         city: str | None = None,
         statuses: list[str] | None = None,
+        dry_run: bool = False,
     ) -> dict[str, Any]:
         """Bulk-reassign shipments from one carrier to another, optionally filtered by
         destination city. Only shipments still in motion are touched — by default this is
@@ -210,10 +211,13 @@ def register(mcp: FastMCP) -> None:
                 shipment.address, ILIKE). Omit to reassign all qualifying shipments.
             statuses: Optional list of shipment statuses to touch. Defaults to
                 ['created','picked_up','in_transit']. Pass an explicit list to widen or narrow.
+            dry_run: When True, returns the list of shipment IDs that WOULD be reassigned
+                without writing anything. Use dry_run=true first to preview impact.
         """
         body: dict[str, Any] = {
             "from_carrier_id": from_carrier_id,
             "to_carrier_id": to_carrier_id,
+            "dry_run": dry_run,
         }
         if city:
             body["city"] = city

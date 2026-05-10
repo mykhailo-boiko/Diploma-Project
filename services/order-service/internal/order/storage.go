@@ -363,9 +363,10 @@ func (s *PostgresStorage) GetSalesByProduct(ctx context.Context, from, to time.T
 	return results, nil
 }
 
-func (s *PostgresStorage) BulkUpdateStatus(ctx context.Context, orderIDs []string, newStatus Status, note string) (BulkStatusResult, error) {
+func (s *PostgresStorage) BulkUpdateStatus(ctx context.Context, orderIDs []string, newStatus Status, note string, dryRun bool) (BulkStatusResult, error) {
 	result := BulkStatusResult{
 		Total:      len(orderIDs),
+		DryRun:     dryRun,
 		UpdatedIDs: make([]string, 0, len(orderIDs)),
 		Successes:  make([]BulkStatusItem, 0, len(orderIDs)),
 		Failures:   make([]BulkStatusItem, 0),
@@ -412,6 +413,14 @@ func (s *PostgresStorage) BulkUpdateStatus(ctx context.Context, orderIDs []strin
 				OrderID: id, OldStatus: from, NewStatus: newStatus,
 				Error: fmt.Sprintf("invalid transition: %s -> %s", from, newStatus),
 			})
+			continue
+		}
+
+		if dryRun {
+			result.Successes = append(result.Successes, BulkStatusItem{
+				OrderID: id, OldStatus: from, NewStatus: newStatus,
+			})
+			result.UpdatedIDs = append(result.UpdatedIDs, id)
 			continue
 		}
 
