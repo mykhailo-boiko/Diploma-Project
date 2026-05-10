@@ -103,6 +103,24 @@ func (m *mockStorage) GetUnreadCount(_ context.Context, userID string) (int, err
 	return count, nil
 }
 
+func (m *mockStorage) GetUnreadCountsAll(_ context.Context) ([]notification.UserUnreadCount, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	totals := make(map[string]int)
+	for _, n := range m.notifications {
+		if n.Status == notification.StatusPending {
+			totals[n.UserID]++
+		}
+	}
+
+	result := make([]notification.UserUnreadCount, 0, len(totals))
+	for uid, c := range totals {
+		result = append(result, notification.UserUnreadCount{UserID: uid, UnreadCount: c})
+	}
+	return result, nil
+}
+
 func (m *mockStorage) GetPreferences(_ context.Context, userID string) ([]notification.Preference, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

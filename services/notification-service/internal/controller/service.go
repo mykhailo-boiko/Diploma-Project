@@ -126,6 +126,10 @@ func (s *Service) GetUnreadCount(ctx context.Context, userID string) (int, error
 	return s.storage.GetUnreadCount(ctx, userID)
 }
 
+func (s *Service) GetUnreadCountsAll(ctx context.Context) ([]notification.UserUnreadCount, error) {
+	return s.storage.GetUnreadCountsAll(ctx)
+}
+
 func (s *Service) GetPreferences(ctx context.Context, userID string) ([]notification.Preference, error) {
 	return s.storage.GetPreferences(ctx, userID)
 }

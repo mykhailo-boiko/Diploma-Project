@@ -20,6 +20,7 @@ type NotificationService interface {
 	ListNotifications(ctx context.Context, filter notification.Filter, sort pagination.Sort, page pagination.Page) ([]notification.Notification, int, error)
 	MarkAsRead(ctx context.Context, id string) (notification.Notification, error)
 	GetUnreadCount(ctx context.Context, userID string) (int, error)
+	GetUnreadCountsAll(ctx context.Context) ([]notification.UserUnreadCount, error)
 	GetPreferences(ctx context.Context, userID string) ([]notification.Preference, error)
 	UpdatePreference(ctx context.Context, pref notification.Preference) (notification.Preference, error)
 	BulkCreate(ctx context.Context, req BulkNotificationRequest) (BulkResult, error)
@@ -141,6 +142,27 @@ func (c *NotificationController) UnreadCount(w http.ResponseWriter, r *http.Requ
 	}
 
 	httpresponse.OK(w, map[string]int{"unread_count": count})
+}
+
+func (c *NotificationController) AdminUnreadCounts(w http.ResponseWriter, r *http.Request) {
+	role := middleware.GetUserRole(r.Context())
+	if role != "admin" {
+		httpresponse.Forbidden(w, "forbidden", "only admin can read aggregated unread counts")
+		return
+	}
+
+	counts, err := c.svc.GetUnreadCountsAll(r.Context())
+	if err != nil {
+		c.log.Error("Failed to get aggregated unread counts", zap.Error(err))
+		httpresponse.InternalError(w, "internal_error", "internal server error")
+		return
+	}
+
+	if counts == nil {
+		counts = []notification.UserUnreadCount{}
+	}
+
+	httpresponse.OK(w, counts)
 }
 
 func (c *NotificationController) GetPreferences(w http.ResponseWriter, r *http.Request) {

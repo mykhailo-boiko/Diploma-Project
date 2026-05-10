@@ -27,6 +27,7 @@ func newRouter(notifCtrl *controller.NotificationController, nc *natspkg.Client,
 	mux.HandleFunc("POST /api/v1/notifications", notifCtrl.Create)
 	mux.HandleFunc("GET /api/v1/notifications", notifCtrl.List)
 	mux.HandleFunc("GET /api/v1/notifications/unread-count", notifCtrl.UnreadCount)
+	mux.HandleFunc("GET /api/v1/notifications/admin/unread-counts", notifCtrl.AdminUnreadCounts)
 	mux.HandleFunc("GET /api/v1/notifications/preferences", notifCtrl.GetPreferences)
 	mux.HandleFunc("PUT /api/v1/notifications/preferences", notifCtrl.UpdatePreference)
 	mux.HandleFunc("POST /api/v1/notifications/bulk", notifCtrl.Bulk)

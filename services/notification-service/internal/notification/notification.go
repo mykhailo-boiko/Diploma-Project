@@ -45,6 +45,11 @@ type Filter struct {
 	Status *Status
 }
 
+type UserUnreadCount struct {
+	UserID      string `json:"user_id"`
+	UnreadCount int    `json:"unread_count"`
+}
+
 type Preference struct {
 	ID        string    `json:"id"`
 	UserID    string    `json:"user_id"`
@@ -65,6 +70,7 @@ type Storage interface {
 	ListNotifications(ctx context.Context, filter Filter, sort pagination.Sort, page pagination.Page) ([]Notification, int, error)
 	MarkAsRead(ctx context.Context, id string) (Notification, error)
 	GetUnreadCount(ctx context.Context, userID string) (int, error)
+	GetUnreadCountsAll(ctx context.Context) ([]UserUnreadCount, error)
 	GetPreferences(ctx context.Context, userID string) ([]Preference, error)
 	UpsertPreference(ctx context.Context, pref Preference) (Preference, error)
 }

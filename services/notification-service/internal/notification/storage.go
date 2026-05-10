@@ -138,6 +138,35 @@ func (s *PostgresStorage) GetUnreadCount(ctx context.Context, userID string) (in
 	return count, nil
 }
 
+func (s *PostgresStorage) GetUnreadCountsAll(ctx context.Context) ([]UserUnreadCount, error) {
+	query := `
+		SELECT user_id, COUNT(*) AS unread_count
+		FROM notifications.notification
+		WHERE status = $1
+		GROUP BY user_id
+		ORDER BY unread_count DESC`
+
+	rows, err := s.pool.Query(ctx, query, string(StatusPending))
+	if err != nil {
+		return nil, fmt.Errorf("failed to query unread counts: %w", err)
+	}
+	defer rows.Close()
+
+	var counts []UserUnreadCount
+	for rows.Next() {
+		var c UserUnreadCount
+		if err := rows.Scan(&c.UserID, &c.UnreadCount); err != nil {
+			return nil, fmt.Errorf("failed to scan unread count: %w", err)
+		}
+		counts = append(counts, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate unread counts: %w", err)
+	}
+
+	return counts, nil
+}
+
 func (s *PostgresStorage) GetPreferences(ctx context.Context, userID string) ([]Preference, error) {
 	query := `
 		SELECT id, user_id, type, in_app, email, sms, updated_at
