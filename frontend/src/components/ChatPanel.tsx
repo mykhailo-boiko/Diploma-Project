@@ -471,7 +471,14 @@ export default function ChatPanel({ open, onClose }: ChatPanelProps) {
                 <MessageBubble msg={msg} />
                 {msg.planId && plans[msg.planId] && (
                   <div className="ml-10 mt-1">
-                    <PlanPanel plan={plans[msg.planId]} />
+                    <PlanPanel
+                      plan={plans[msg.planId]}
+                      onConfirmExecution={() =>
+                        sendMessage(
+                          "Підтверджую — виконай тепер з dry_run=false. Звітуй що було реально оновлено.",
+                        )
+                      }
+                    />
                   </div>
                 )}
               </div>

@@ -1,12 +1,52 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, ChevronRight, CheckCircle2, XCircle, Loader2, Clock } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  CheckCircle2,
+  XCircle,
+  Loader2,
+  Clock,
+  ShieldAlert,
+} from "lucide-react";
 import clsx from "clsx";
 import type { ExecutionPlan, PlanStep } from "@/lib/use-chat-socket";
 
 interface PlanPanelProps {
   plan: ExecutionPlan;
+  onConfirmExecution?: () => void;
+}
+
+function findDryRunStep(plan: ExecutionPlan): PlanStep | null {
+  for (const step of plan.steps) {
+    if (step.status !== "success") continue;
+    const result = step.result as Record<string, unknown> | null;
+    if (result && typeof result === "object") {
+      const data = (result.data ?? result) as Record<string, unknown>;
+      if (data && typeof data === "object" && (data as { dry_run?: boolean }).dry_run === true) {
+        return step;
+      }
+    }
+  }
+  return null;
+}
+
+function describeDryRunImpact(step: PlanStep): string {
+  const result = step.result as Record<string, unknown> | null;
+  if (!result) return "preview mode";
+  const data = ((result.data ?? result) as Record<string, unknown>) || {};
+  const total = (data.total ?? data.updated_ids ?? data.reassigned_ids) as unknown;
+  const totalNum =
+    typeof total === "number"
+      ? total
+      : Array.isArray(total)
+        ? total.length
+        : undefined;
+  if (totalNum != null) {
+    return `${step.tool} would affect ${totalNum} ${totalNum === 1 ? "entity" : "entities"}`;
+  }
+  return `${step.tool} ran in preview mode`;
 }
 
 function StepIcon({ status }: { status: PlanStep["status"] }) {
@@ -129,8 +169,9 @@ function StepRow({ step, index }: { step: PlanStep; index: number }) {
   );
 }
 
-export default function PlanPanel({ plan }: PlanPanelProps) {
+export default function PlanPanel({ plan, onConfirmExecution }: PlanPanelProps) {
   const [open, setOpen] = useState(false);
+  const dryRunStep = findDryRunStep(plan);
 
   const totalMs = plan.steps.reduce((acc, s) => acc + (s.duration_ms ?? 0), 0);
   const successCount = plan.steps.filter((s) => s.status === "success").length;
@@ -175,6 +216,21 @@ export default function PlanPanel({ plan }: PlanPanelProps) {
           {plan.steps.map((step, idx) => (
             <StepRow key={step.id} step={step} index={idx} />
           ))}
+        </div>
+      )}
+      {dryRunStep && onConfirmExecution && (
+        <div className="flex items-start gap-3 border-t border-amber-200 bg-amber-50 px-3 py-2 text-xs">
+          <ShieldAlert className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-600" />
+          <div className="flex-1">
+            <div className="font-semibold text-amber-900">Preview mode (no writes applied)</div>
+            <div className="mt-0.5 text-amber-800">{describeDryRunImpact(dryRunStep)}</div>
+          </div>
+          <button
+            onClick={onConfirmExecution}
+            className="flex-shrink-0 rounded-md bg-amber-600 px-3 py-1 text-xs font-medium text-white hover:bg-amber-700"
+          >
+            Confirm &amp; execute
+          </button>
         </div>
       )}
     </div>
