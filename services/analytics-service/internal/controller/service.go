@@ -333,6 +333,18 @@ func (s *Service) detectInventoryAnomalies(records []analytics.InventorySnapshot
 	return anomalies
 }
 
+func (s *Service) GetQuickCancellations(ctx context.Context, from, to time.Time, maxMinutes int) ([]analytics.QuickCancellation, error) {
+	return s.storage.GetQuickCancellations(ctx, from, to, maxMinutes)
+}
+
+func (s *Service) GetRebalancingRecommendations(ctx context.Context, params analytics.RebalancingParams) ([]analytics.RebalancingRecommendation, error) {
+	return s.storage.GetRebalancingRecommendations(ctx, params)
+}
+
+func (s *Service) GetCarrierPerformance(ctx context.Context, from, to time.Time, slaHours int, worstCitiesPerCarrier int) ([]analytics.CarrierPerformance, error) {
+	return s.storage.GetCarrierPerformance(ctx, from, to, slaHours, worstCitiesPerCarrier)
+}
+
 func (s *Service) GetOptimizations(ctx context.Context, from, to time.Time) ([]analytics.Optimization, error) {
 	salesRecords, err := s.storage.GetSalesDaily(ctx, from, to)
 	if err != nil {

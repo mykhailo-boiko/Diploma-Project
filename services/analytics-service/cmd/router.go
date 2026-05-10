@@ -36,6 +36,9 @@ func newRouter(ctrl *controller.AnalyticsController, nc *natspkg.Client) http.Ha
 	mux.HandleFunc("GET /api/v1/analytics/logistics/performance", ctrl.GetLogisticsPerformance)
 	mux.HandleFunc("GET /api/v1/analytics/anomalies", ctrl.GetAnomalies)
 	mux.HandleFunc("GET /api/v1/analytics/optimization", ctrl.GetOptimizations)
+	mux.HandleFunc("GET /api/v1/analytics/quick-cancellations", ctrl.GetQuickCancellations)
+	mux.HandleFunc("GET /api/v1/analytics/rebalancing", ctrl.GetRebalancing)
+	mux.HandleFunc("GET /api/v1/analytics/carriers-performance", ctrl.GetCarrierPerformance)
 	mux.HandleFunc("POST /api/v1/analytics/report", ctrl.GenerateReport)
 
 	return handler

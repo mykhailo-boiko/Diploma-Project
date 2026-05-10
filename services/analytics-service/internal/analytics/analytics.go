@@ -110,6 +110,61 @@ type Report struct {
 	Data       any    `json:"data"`
 }
 
+type CarrierCityStat struct {
+	City       string  `json:"city"`
+	Delivered  int     `json:"delivered"`
+	OnTime     int     `json:"on_time"`
+	Late       int     `json:"late"`
+	OnTimeRate float64 `json:"on_time_rate"`
+	AvgHours   float64 `json:"avg_delivery_hours"`
+}
+
+type CarrierPerformance struct {
+	CarrierID         string            `json:"carrier_id"`
+	CarrierName       string            `json:"carrier_name"`
+	IsActive          bool              `json:"is_active"`
+	TotalShipments    int               `json:"total_shipments"`
+	Delivered         int               `json:"delivered"`
+	OnTime            int               `json:"on_time"`
+	Late              int               `json:"late"`
+	Cancelled         int               `json:"cancelled"`
+	Returned          int               `json:"returned"`
+	OnTimeRate        float64           `json:"on_time_rate"`
+	AvgDeliveryHours  float64           `json:"avg_delivery_hours"`
+	WorstCities       []CarrierCityStat `json:"worst_cities"`
+}
+
+type RebalancingRecommendation struct {
+	ProductID         string  `json:"product_id"`
+	SKU               string  `json:"sku"`
+	ProductName       string  `json:"product_name"`
+	Category          string  `json:"category"`
+	UnitPrice         float64 `json:"unit_price"`
+	DonorWarehouse    string  `json:"donor_warehouse"`
+	DonorQuantity     int     `json:"donor_quantity"`
+	DonorThreshold    int     `json:"donor_min_threshold"`
+	AcceptorWarehouse string  `json:"acceptor_warehouse"`
+	AcceptorQuantity  int     `json:"acceptor_quantity"`
+	AcceptorThreshold int     `json:"acceptor_min_threshold"`
+	TransferQty       int     `json:"transfer_qty"`
+	HoldingSavings    float64 `json:"holding_savings"`
+	TransferCost      float64 `json:"transfer_cost"`
+	NetBenefit        float64 `json:"net_benefit"`
+	ROIPct            float64 `json:"roi_pct"`
+}
+
+type QuickCancellation struct {
+	CarrierName       string   `json:"carrier_name"`
+	City              string   `json:"city"`
+	Count             int      `json:"count"`
+	AvgMinutes        float64  `json:"avg_minutes_between"`
+	MinMinutes        float64  `json:"min_minutes_between"`
+	MaxMinutes        float64  `json:"max_minutes_between"`
+	LostRevenue       float64  `json:"lost_revenue"`
+	SampleOrderIDs    []string `json:"sample_order_ids"`
+	SampleCancelReasons []string `json:"sample_cancel_reasons,omitempty"`
+}
+
 type Storage interface {
 	UpsertSalesDaily(ctx context.Context, record SalesDaily) (SalesDaily, error)
 	UpsertInventorySnapshot(ctx context.Context, record InventorySnapshot) (InventorySnapshot, error)
@@ -118,4 +173,18 @@ type Storage interface {
 	GetSalesDaily(ctx context.Context, from, to time.Time) ([]SalesDaily, error)
 	GetInventorySnapshots(ctx context.Context, from, to time.Time) ([]InventorySnapshot, error)
 	GetLogisticsDaily(ctx context.Context, from, to time.Time) ([]LogisticsDaily, error)
+
+	GetQuickCancellations(ctx context.Context, from, to time.Time, maxMinutes int) ([]QuickCancellation, error)
+	GetRebalancingRecommendations(ctx context.Context, params RebalancingParams) ([]RebalancingRecommendation, error)
+	GetCarrierPerformance(ctx context.Context, from, to time.Time, slaHours int, worstCitiesPerCarrier int) ([]CarrierPerformance, error)
+}
+
+type RebalancingParams struct {
+	OverstockMultiplier float64
+	HoldingDailyRate    float64
+	HoldingHorizonDays  int
+	TransferBaseFee     float64
+	TransferPerUnit     float64
+	OnlyPositiveROI     bool
+	Limit               int
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"time"
 
 	"go.uber.org/zap"
@@ -23,6 +24,9 @@ type AnalyticsService interface {
 	DetectAnomalies(ctx context.Context, from, to time.Time) ([]analytics.Anomaly, error)
 	GetOptimizations(ctx context.Context, from, to time.Time) ([]analytics.Optimization, error)
 	GenerateReport(ctx context.Context, req analytics.ReportRequest) (analytics.Report, error)
+	GetQuickCancellations(ctx context.Context, from, to time.Time, maxMinutes int) ([]analytics.QuickCancellation, error)
+	GetRebalancingRecommendations(ctx context.Context, params analytics.RebalancingParams) ([]analytics.RebalancingRecommendation, error)
+	GetCarrierPerformance(ctx context.Context, from, to time.Time, slaHours int, worstCitiesPerCarrier int) ([]analytics.CarrierPerformance, error)
 }
 
 type AnalyticsController struct {
@@ -237,6 +241,132 @@ func (c *AnalyticsController) GenerateReport(w http.ResponseWriter, r *http.Requ
 	}
 
 	httpresponse.OK(w, report)
+}
+
+func (c *AnalyticsController) GetCarrierPerformance(w http.ResponseWriter, r *http.Request) {
+	from, to, ok := parseDateRange(r)
+	if !ok {
+		httpresponse.BadRequest(w, "validation_error", "date_from and date_to are required (YYYY-MM-DD format)")
+		return
+	}
+	to = to.Add(24*time.Hour - time.Second)
+
+	slaHours := 168
+	if s := r.URL.Query().Get("sla_hours"); s != "" {
+		if v, err := strconv.Atoi(s); err == nil && v > 0 {
+			slaHours = v
+		}
+	}
+
+	worstCities := 5
+	if s := r.URL.Query().Get("worst_cities"); s != "" {
+		if v, err := strconv.Atoi(s); err == nil && v > 0 {
+			worstCities = v
+		}
+	}
+
+	results, err := c.svc.GetCarrierPerformance(r.Context(), from, to, slaHours, worstCities)
+	if err != nil {
+		c.log.Error("Failed to get carrier performance", zap.Error(err))
+		httpresponse.InternalError(w, "internal_error", "internal server error")
+		return
+	}
+
+	if results == nil {
+		results = []analytics.CarrierPerformance{}
+	}
+
+	httpresponse.OK(w, results)
+}
+
+func (c *AnalyticsController) GetRebalancing(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+
+	params := analytics.RebalancingParams{
+		OverstockMultiplier: 3.0,
+		HoldingDailyRate:    0.0005,
+		HoldingHorizonDays:  30,
+		TransferBaseFee:     50.0,
+		TransferPerUnit:     1.5,
+		OnlyPositiveROI:     true,
+		Limit:               50,
+	}
+
+	if s := q.Get("overstock_multiplier"); s != "" {
+		if v, err := strconv.ParseFloat(s, 64); err == nil && v > 0 {
+			params.OverstockMultiplier = v
+		}
+	}
+	if s := q.Get("holding_daily_rate"); s != "" {
+		if v, err := strconv.ParseFloat(s, 64); err == nil && v > 0 {
+			params.HoldingDailyRate = v
+		}
+	}
+	if s := q.Get("holding_horizon_days"); s != "" {
+		if v, err := strconv.Atoi(s); err == nil && v > 0 {
+			params.HoldingHorizonDays = v
+		}
+	}
+	if s := q.Get("transfer_base_fee"); s != "" {
+		if v, err := strconv.ParseFloat(s, 64); err == nil && v >= 0 {
+			params.TransferBaseFee = v
+		}
+	}
+	if s := q.Get("transfer_per_unit"); s != "" {
+		if v, err := strconv.ParseFloat(s, 64); err == nil && v >= 0 {
+			params.TransferPerUnit = v
+		}
+	}
+	if q.Get("include_unprofitable") == "true" {
+		params.OnlyPositiveROI = false
+	}
+	if s := q.Get("limit"); s != "" {
+		if v, err := strconv.Atoi(s); err == nil && v > 0 {
+			params.Limit = v
+		}
+	}
+
+	results, err := c.svc.GetRebalancingRecommendations(r.Context(), params)
+	if err != nil {
+		c.log.Error("Failed to get rebalancing recommendations", zap.Error(err))
+		httpresponse.InternalError(w, "internal_error", "internal server error")
+		return
+	}
+
+	if results == nil {
+		results = []analytics.RebalancingRecommendation{}
+	}
+
+	httpresponse.OK(w, results)
+}
+
+func (c *AnalyticsController) GetQuickCancellations(w http.ResponseWriter, r *http.Request) {
+	from, to, ok := parseDateRange(r)
+	if !ok {
+		httpresponse.BadRequest(w, "validation_error", "date_from and date_to are required (YYYY-MM-DD format)")
+		return
+	}
+	to = to.Add(24*time.Hour - time.Second)
+
+	maxMinutes := 60
+	if s := r.URL.Query().Get("max_minutes"); s != "" {
+		if v, err := strconv.Atoi(s); err == nil && v > 0 {
+			maxMinutes = v
+		}
+	}
+
+	results, err := c.svc.GetQuickCancellations(r.Context(), from, to, maxMinutes)
+	if err != nil {
+		c.log.Error("Failed to get quick cancellations", zap.Error(err))
+		httpresponse.InternalError(w, "internal_error", "internal server error")
+		return
+	}
+
+	if results == nil {
+		results = []analytics.QuickCancellation{}
+	}
+
+	httpresponse.OK(w, results)
 }
 
 func parseDateRange(r *http.Request) (time.Time, time.Time, bool) {

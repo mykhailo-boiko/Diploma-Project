@@ -103,6 +103,18 @@ func (m *mockStorage) GetLogisticsDaily(_ context.Context, from, to time.Time) (
 	return results, nil
 }
 
+func (m *mockStorage) GetQuickCancellations(_ context.Context, _, _ time.Time, _ int) ([]analytics.QuickCancellation, error) {
+	return []analytics.QuickCancellation{}, nil
+}
+
+func (m *mockStorage) GetRebalancingRecommendations(_ context.Context, _ analytics.RebalancingParams) ([]analytics.RebalancingRecommendation, error) {
+	return []analytics.RebalancingRecommendation{}, nil
+}
+
+func (m *mockStorage) GetCarrierPerformance(_ context.Context, _, _ time.Time, _ int, _ int) ([]analytics.CarrierPerformance, error) {
+	return []analytics.CarrierPerformance{}, nil
+}
+
 func newTestService() (*Service, *mockStorage) {
 	storage := newMockStorage()
 	return NewService(storage, zap.NewNop()), storage
