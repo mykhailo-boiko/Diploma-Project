@@ -7,6 +7,7 @@ import DataTable, { type Column } from "@/components/ui/DataTable";
 import StatusBadge from "@/components/ui/StatusBadge";
 import Button from "@/components/ui/Button";
 import { useOrders, useOrderSearch, type Order } from "@/lib/use-orders";
+import { safeFixed } from "@/lib/format";
 
 const ORDER_STATUSES = [
   { value: "", label: "All statuses" },
@@ -41,7 +42,7 @@ const columns: Column<Order>[] = [
     key: "total_amount",
     header: "Total",
     sortable: true,
-    render: (row) => `$${row.total_amount.toFixed(2)}`,
+    render: (row) => `$${safeFixed(row.total_amount, 2)}`,
     className: "text-right",
   },
   {

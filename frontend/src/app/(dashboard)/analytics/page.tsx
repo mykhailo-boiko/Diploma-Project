@@ -8,6 +8,7 @@ import { Modal } from "@/components/ui/Modal";
 import { FormField, Select } from "@/components/ui/FormField";
 import { useForm } from "react-hook-form";
 import { toastSuccess, toastError } from "@/lib/toast";
+import { safeFixed, safeLocale } from "@/lib/format";
 import {
   useSalesSummary,
   useSalesTrends,
@@ -131,7 +132,7 @@ export default function AnalyticsPage() {
           icon={<Truck className="h-5 w-5 text-orange-600" />}
           title="On-Time Rate"
           value={
-            logistics ? `${logistics.on_time_rate.toFixed(1)}%` : "-"
+            logistics ? `${safeFixed(logistics.on_time_rate, 1)}%` : "-"
           }
           subtitle={`${logistics?.delivered_count ?? 0} delivered`}
         />
@@ -359,7 +360,7 @@ function InventoryChart({
       <div className="space-y-2 text-sm">
         <div>
           <span className="text-gray-500">Total Qty:</span>{" "}
-          <span className="font-medium">{data.total_quantity.toLocaleString()}</span>
+          <span className="font-medium">{safeLocale(data.total_quantity)}</span>
         </div>
         <div>
           <span className="text-gray-500">Low Stock:</span>{" "}
@@ -367,7 +368,7 @@ function InventoryChart({
         </div>
         <div>
           <span className="text-gray-500">Turnover:</span>{" "}
-          <span className="font-medium">{data.turnover_rate.toFixed(2)}</span>
+          <span className="font-medium">{safeFixed(data.turnover_rate, 2)}</span>
         </div>
       </div>
     </div>
@@ -404,12 +405,12 @@ function LogisticsChart({
         <div>
           <span className="text-gray-500">On-Time:</span>{" "}
           <span className="font-medium text-green-600">
-            {data.on_time_rate.toFixed(1)}%
+            {safeFixed(data.on_time_rate, 1)}%
           </span>
         </div>
         <div>
           <span className="text-gray-500">Avg Delivery:</span>{" "}
-          <span className="font-medium">{data.avg_delivery_h.toFixed(1)}h</span>
+          <span className="font-medium">{safeFixed(data.avg_delivery_h, 1)}h</span>
         </div>
       </div>
     </div>
@@ -433,8 +434,8 @@ function AnomalyCard({ anomaly }: { anomaly: Anomaly }) {
       </div>
       <p className="text-sm text-gray-600">{anomaly.message}</p>
       <div className="mt-1 flex gap-4 text-xs text-gray-400">
-        <span>Value: {anomaly.value.toFixed(2)}</span>
-        <span>Threshold: {anomaly.threshold.toFixed(2)}</span>
+        <span>Value: {safeFixed(anomaly.value, 2)}</span>
+        <span>Threshold: {safeFixed(anomaly.threshold, 2)}</span>
         <span>{anomaly.date}</span>
       </div>
     </div>
@@ -447,8 +448,8 @@ function OptimizationRow({ opt }: { opt: Optimization }) {
       <td className="py-2 pr-4 font-medium text-gray-900">{opt.product_name}</td>
       <td className="py-2 pr-4 text-gray-500">{opt.product_sku}</td>
       <td className="py-2 pr-4 text-right">{opt.current_stock}</td>
-      <td className="py-2 pr-4 text-right">{opt.reorder_point.toFixed(0)}</td>
-      <td className="py-2 pr-4 text-right font-medium">{opt.recommended_order.toFixed(0)}</td>
+      <td className="py-2 pr-4 text-right">{safeFixed(opt.reorder_point, 0)}</td>
+      <td className="py-2 pr-4 text-right font-medium">{safeFixed(opt.recommended_order, 0)}</td>
       <td className="py-2">
         <StatusBadge
           status={

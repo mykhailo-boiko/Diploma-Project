@@ -14,6 +14,7 @@ import { useWarehouse, useUpdateWarehouse } from "@/lib/use-warehouses";
 import { useStock, type Stock } from "@/lib/use-stock";
 import { toastSuccess, toastError } from "@/lib/toast";
 import { useQueryClient } from "@/lib/api-hooks";
+import { safeLocale } from "@/lib/format";
 
 interface EditFormValues {
   name: string;
@@ -179,13 +180,13 @@ export default function WarehouseDetailPage() {
             Total Quantity
           </h2>
           <p className="text-2xl font-bold text-gray-900">
-            {totalQty.toLocaleString()}
+            {safeLocale(totalQty)}
           </p>
         </Card>
         <Card>
           <h2 className="mb-2 text-sm font-semibold text-gray-700">Reserved</h2>
           <p className="text-2xl font-bold text-amber-600">
-            {totalReserved.toLocaleString()}
+            {safeLocale(totalReserved)}
           </p>
         </Card>
         <Card>
@@ -193,7 +194,7 @@ export default function WarehouseDetailPage() {
             Available
           </h2>
           <p className="text-2xl font-bold text-green-600">
-            {totalAvailable.toLocaleString()}
+            {safeLocale(totalAvailable)}
           </p>
         </Card>
         <Card>
@@ -222,7 +223,7 @@ export default function WarehouseDetailPage() {
           />
         </div>
         <p className="mt-1 text-right text-xs text-gray-500">
-          {totalQty.toLocaleString()} units
+          {safeLocale(totalQty)} units
         </p>
       </Card>
 

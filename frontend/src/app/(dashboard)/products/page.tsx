@@ -9,6 +9,7 @@ import Button from "@/components/ui/Button";
 import { ConfirmDialog } from "@/components/ui/Modal";
 import { useProducts, useDeleteProduct, type Product } from "@/lib/use-products";
 import { toastSuccess, toastError } from "@/lib/toast";
+import { safeFixed } from "@/lib/format";
 
 const CATEGORIES = [
   { value: "", label: "All categories" },
@@ -102,7 +103,7 @@ export default function ProductsPage() {
       key: "unit_price",
       header: "Unit Price",
       sortable: true,
-      render: (row) => `$${row.unit_price.toFixed(2)}`,
+      render: (row) => `$${safeFixed(row.unit_price, 2)}`,
       className: "text-right",
     },
     {

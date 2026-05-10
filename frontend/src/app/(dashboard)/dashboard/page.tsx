@@ -48,6 +48,7 @@ import {
   Legend,
 } from "recharts";
 import { useRouter } from "next/navigation";
+import { safeFixed } from "@/lib/format";
 
 const PIE_COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#6366f1"];
 
@@ -138,12 +139,12 @@ function KPIRow({ role }: { role: Role }) {
         <StatCard
           title="On-Time Rate"
           value={
-            logisticsPerf.data
-              ? `${logisticsPerf.data.data.on_time_rate.toFixed(1)}%`
+            typeof logisticsPerf.data?.data?.on_time_rate === "number"
+              ? `${safeFixed(logisticsPerf.data.data.on_time_rate, 1)}%`
               : "—"
           }
           subtitle={
-            logisticsPerf.data
+            typeof logisticsPerf.data?.data?.late === "number"
               ? `${logisticsPerf.data.data.late} late deliveries`
               : undefined
           }
@@ -369,18 +370,22 @@ function InventorySection() {
             <MiniStat
               icon={Warehouse}
               label="Total Quantity"
-              value={summary.total_quantity.toLocaleString()}
+              value={(summary.total_quantity ?? 0).toLocaleString()}
             />
             <MiniStat
               icon={TrendingUp}
               label="Turnover Rate"
-              value={`${summary.turnover_rate.toFixed(2)}x`}
+              value={
+                typeof summary.turnover_rate === "number"
+                  ? `${safeFixed(summary.turnover_rate, 2)}x`
+                  : "—"
+              }
             />
             <MiniStat
               icon={AlertTriangle}
               label="Low Stock Items"
-              value={summary.low_stock_count}
-              danger={summary.low_stock_count > 0}
+              value={summary.low_stock_count ?? 0}
+              danger={(summary.low_stock_count ?? 0) > 0}
             />
           </div>
         ) : (
@@ -518,12 +523,20 @@ function LogisticsSection() {
             <MiniStat
               icon={Clock}
               label="Avg Delivery Time"
-              value={`${aPerf.avg_delivery_h.toFixed(1)}h`}
+              value={
+                typeof aPerf.avg_delivery_h === "number"
+                  ? `${safeFixed(aPerf.avg_delivery_h, 1)}h`
+                  : "—"
+              }
             />
             <MiniStat
               icon={BarChart3}
               label="On-Time Rate"
-              value={`${aPerf.on_time_rate.toFixed(1)}%`}
+              value={
+                typeof aPerf.on_time_rate === "number"
+                  ? `${safeFixed(aPerf.on_time_rate, 1)}%`
+                  : "—"
+              }
             />
           </div>
         ) : perfData ? (
@@ -542,7 +555,11 @@ function LogisticsSection() {
             <MiniStat
               icon={BarChart3}
               label="On-Time Rate"
-              value={`${perfData.on_time_rate.toFixed(1)}%`}
+              value={
+                typeof perfData.on_time_rate === "number"
+                  ? `${safeFixed(perfData.on_time_rate, 1)}%`
+                  : "—"
+              }
             />
           </div>
         ) : (

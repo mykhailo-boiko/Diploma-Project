@@ -8,6 +8,7 @@ import { FormField, Input } from "@/components/ui/FormField";
 import { Card } from "@/components/ui/Card";
 import { useCreateOrder, type CreateOrderInput } from "@/lib/use-orders";
 import { toastSuccess, toastError } from "@/lib/toast";
+import { safeFixed } from "@/lib/format";
 
 interface FormValues {
   customer_name: string;
@@ -195,7 +196,7 @@ export default function NewOrderPage() {
             <div className="text-right">
               <p className="text-sm text-gray-500">Estimated Total</p>
               <p className="text-xl font-bold text-gray-900">
-                ${totalAmount.toFixed(2)}
+                ${safeFixed(totalAmount, 2)}
               </p>
             </div>
           </div>

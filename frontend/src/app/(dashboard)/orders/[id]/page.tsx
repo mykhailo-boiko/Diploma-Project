@@ -10,6 +10,7 @@ import { Card } from "@/components/ui/Card";
 import { useOrder, useUpdateOrderStatus, useCancelOrder } from "@/lib/use-orders";
 import { toastSuccess, toastError } from "@/lib/toast";
 import { useQueryClient } from "@/lib/api-hooks";
+import { safeFixed } from "@/lib/format";
 
 const NEXT_STATUS: Record<string, { label: string; status: string }[]> = {
   pending: [{ label: "Confirm", status: "confirmed" }],
@@ -178,7 +179,7 @@ export default function OrderDetailPage() {
         <Card>
           <h2 className="mb-2 text-sm font-semibold text-gray-700">Total</h2>
           <p className="text-lg font-medium text-gray-900">
-            ${order.total_amount.toFixed(2)}
+            ${safeFixed(order.total_amount, 2)}
           </p>
         </Card>
         <Card>
@@ -246,10 +247,10 @@ export default function OrderDetailPage() {
                       {item.quantity}
                     </td>
                     <td className="px-4 py-2 text-right text-sm text-gray-700">
-                      ${item.unit_price.toFixed(2)}
+                      ${safeFixed(item.unit_price, 2)}
                     </td>
                     <td className="px-4 py-2 text-right text-sm font-medium text-gray-900">
-                      ${item.subtotal.toFixed(2)}
+                      ${safeFixed(item.subtotal, 2)}
                     </td>
                   </tr>
                 ))}
@@ -260,7 +261,7 @@ export default function OrderDetailPage() {
                     Total
                   </td>
                   <td className="px-4 py-2 text-right text-sm font-bold text-gray-900">
-                    ${order.total_amount.toFixed(2)}
+                    ${safeFixed(order.total_amount, 2)}
                   </td>
                 </tr>
               </tfoot>

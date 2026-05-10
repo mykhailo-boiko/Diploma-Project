@@ -11,6 +11,7 @@ import { FormField, Input, Select } from "@/components/ui/FormField";
 import { useCarriers, useCreateCarrier, useUpdateCarrier, type Carrier, type CreateCarrierInput, type UpdateCarrierInput } from "@/lib/use-carriers";
 import { toastSuccess, toastError } from "@/lib/toast";
 import { useQueryClient } from "@/lib/api-hooks";
+import { safeFixed } from "@/lib/format";
 
 const CARRIER_TYPES = [
   { value: "", label: "All types" },
@@ -41,7 +42,7 @@ const columns: Column<Carrier>[] = [
     key: "cost_per_km",
     header: "Cost / km",
     sortable: true,
-    render: (row) => `$${row.cost_per_km.toFixed(2)}`,
+    render: (row) => `$${safeFixed(row.cost_per_km, 2)}`,
     className: "text-right",
   },
   {

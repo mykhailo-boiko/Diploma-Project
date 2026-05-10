@@ -11,6 +11,7 @@ import { FormField, Input, Select, Textarea } from "@/components/ui/FormField";
 import { useProduct, useUpdateProduct, useDeleteProduct } from "@/lib/use-products";
 import { toastSuccess, toastError } from "@/lib/toast";
 import { useQueryClient } from "@/lib/api-hooks";
+import { safeFixed } from "@/lib/format";
 
 const CATEGORY_OPTIONS = [
   { value: "", label: "No category" },
@@ -154,7 +155,7 @@ export default function ProductDetailPage() {
             Unit Price
           </h2>
           <p className="text-lg font-medium text-gray-900">
-            ${product.unit_price.toFixed(2)}
+            ${safeFixed(product.unit_price, 2)}
           </p>
         </Card>
         <Card>
