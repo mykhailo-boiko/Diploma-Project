@@ -4,7 +4,7 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from http_client import api_delete, api_get, api_post, api_put
+from http_client import api_delete, api_get, api_post, api_put, api_get_all
 
 
 def register(mcp: FastMCP) -> None:
@@ -18,8 +18,9 @@ def register(mcp: FastMCP) -> None:
         category: str | None = None,
         sort_by: str | None = None,
         sort_order: str | None = None,
-        limit: int = 20,
+        limit: int = 100,
         offset: int = 0,
+        fetch_all: bool = False,
     ) -> dict[str, Any]:
         """List products with optional filters and pagination.
 
@@ -31,8 +32,9 @@ def register(mcp: FastMCP) -> None:
             sort_order: Sort direction (asc or desc).
             limit: Maximum number of results (default 20).
             offset: Number of results to skip (default 0).
+            fetch_all: When True, automatically fetches every page and returns the full list. Use this when the user asks for "all", "everything", or otherwise wants no pagination.
         """
-        return await api_get("/api/v1/products", {
+        return await (api_get_all if fetch_all else api_get)("/api/v1/products", {
             "sku": sku, "name": name, "category": category,
             "sort_by": sort_by, "sort_order": sort_order,
             "limit": limit, "offset": offset,
@@ -106,8 +108,9 @@ def register(mcp: FastMCP) -> None:
         name: str | None = None,
         sort_by: str | None = None,
         sort_order: str | None = None,
-        limit: int = 20,
+        limit: int = 100,
         offset: int = 0,
+        fetch_all: bool = False,
     ) -> dict[str, Any]:
         """List warehouses with optional filters and pagination.
 
@@ -117,8 +120,9 @@ def register(mcp: FastMCP) -> None:
             sort_order: Sort direction (asc or desc).
             limit: Maximum number of results (default 20).
             offset: Number of results to skip (default 0).
+            fetch_all: When True, automatically fetches every page and returns the full list. Use this when the user asks for "all", "everything", or otherwise wants no pagination.
         """
-        return await api_get("/api/v1/warehouses", {
+        return await (api_get_all if fetch_all else api_get)("/api/v1/warehouses", {
             "name": name, "sort_by": sort_by, "sort_order": sort_order,
             "limit": limit, "offset": offset,
         })
@@ -168,8 +172,9 @@ def register(mcp: FastMCP) -> None:
         warehouse_id: str | None = None,
         sort_by: str | None = None,
         sort_order: str | None = None,
-        limit: int = 20,
+        limit: int = 100,
         offset: int = 0,
+        fetch_all: bool = False,
     ) -> dict[str, Any]:
         """List stock levels with optional filters. Shows quantity, reserved, and available for each product-warehouse combination.
 
@@ -180,8 +185,9 @@ def register(mcp: FastMCP) -> None:
             sort_order: Sort direction (asc or desc).
             limit: Maximum number of results (default 20).
             offset: Number of results to skip (default 0).
+            fetch_all: When True, automatically fetches every page and returns the full list. Use this when the user asks for "all", "everything", or otherwise wants no pagination.
         """
-        return await api_get("/api/v1/stock", {
+        return await (api_get_all if fetch_all else api_get)("/api/v1/stock", {
             "product_id": product_id, "warehouse_id": warehouse_id,
             "sort_by": sort_by, "sort_order": sort_order,
             "limit": limit, "offset": offset,
@@ -257,8 +263,9 @@ def register(mcp: FastMCP) -> None:
         type: str | None = None,
         date_from: str | None = None,
         date_to: str | None = None,
-        limit: int = 20,
+        limit: int = 100,
         offset: int = 0,
+        fetch_all: bool = False,
     ) -> dict[str, Any]:
         """Get stock movement history with optional filters.
 
@@ -271,8 +278,9 @@ def register(mcp: FastMCP) -> None:
             date_to: Filter movements before this date (RFC3339 format).
             limit: Maximum number of results (default 20).
             offset: Number of results to skip (default 0).
+            fetch_all: When True, automatically fetches every page and returns the full list. Use this when the user asks for "all", "everything", or otherwise wants no pagination.
         """
-        return await api_get("/api/v1/stock/movements", {
+        return await (api_get_all if fetch_all else api_get)("/api/v1/stock/movements", {
             "stock_id": stock_id, "product_id": product_id,
             "warehouse_id": warehouse_id, "type": type,
             "date_from": date_from, "date_to": date_to,

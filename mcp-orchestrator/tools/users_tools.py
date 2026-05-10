@@ -4,7 +4,7 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from http_client import api_delete, api_get, api_post, api_put
+from http_client import api_delete, api_get, api_post, api_put, api_get_all
 
 
 def register(mcp: FastMCP) -> None:
@@ -107,8 +107,9 @@ def register(mcp: FastMCP) -> None:
         name: str | None = None,
         sort_by: str | None = None,
         sort_order: str | None = None,
-        limit: int = 20,
+        limit: int = 100,
         offset: int = 0,
+        fetch_all: bool = False,
     ) -> dict[str, Any]:
         """List all users with optional filters (admin only).
 
@@ -120,8 +121,9 @@ def register(mcp: FastMCP) -> None:
             sort_order: Sort direction (asc or desc).
             limit: Maximum number of results (default 20).
             offset: Number of results to skip (default 0).
+            fetch_all: When True, automatically fetches every page and returns the full list. Use this when the user asks for "all", "everything", or otherwise wants no pagination.
         """
-        return await api_get("/api/v1/users", {
+        return await (api_get_all if fetch_all else api_get)("/api/v1/users", {
             "role": role, "email": email, "name": name,
             "sort_by": sort_by, "sort_order": sort_order,
             "limit": limit, "offset": offset,
