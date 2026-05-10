@@ -7,7 +7,7 @@ import (
 
 const (
 	defaultLimit = 20
-	maxLimit     = 100
+	maxLimit     = 1000
 )
 
 type Page struct {
