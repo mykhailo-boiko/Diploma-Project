@@ -12,7 +12,12 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool()
     async def analytics_sales(date_from: str, date_to: str) -> dict[str, Any]:
-        """Get daily sales data for a date range.
+        """Daily total sales (revenue + order count) per day for a date range.
+
+        DO NOT use this for per-SKU velocity — use orders_sales_by_product instead.
+        DO NOT use this for per-carrier metrics — use analytics_carriers_performance.
+        Also see: analytics_sales_summary (totals over the range), analytics_sales_trends
+        (day or week buckets), analytics_period_comparison (delta vs another period).
 
         Args:
             date_from: Start date (YYYY-MM-DD format, e.g. 2026-04-01).
@@ -24,7 +29,11 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool()
     async def analytics_sales_summary(date_from: str, date_to: str) -> dict[str, Any]:
-        """Get aggregated sales summary: total revenue, order count, and average order value.
+        """Aggregated sales summary over a window: total revenue, order count, average order value.
+
+        For per-product breakdown, use orders_sales_by_product instead.
+        For period-over-period delta, use analytics_period_comparison.
+        Also see: analytics_sales (daily series), analytics_sales_trends (week buckets).
 
         Args:
             date_from: Start date (YYYY-MM-DD format).
@@ -40,7 +49,11 @@ def register(mcp: FastMCP) -> None:
         date_to: str,
         granularity: str = "day",
     ) -> dict[str, Any]:
-        """Get sales trends over time, aggregated by day or week.
+        """Sales trends over time, bucketed by day or week.
+
+        For totals (single number), use analytics_sales_summary.
+        For per-SKU velocity, use orders_sales_by_product.
+        Also see: analytics_sales (raw daily series), analytics_period_comparison.
 
         Args:
             date_from: Start date (YYYY-MM-DD format).
@@ -54,7 +67,10 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool()
     async def analytics_inventory(date_from: str, date_to: str) -> dict[str, Any]:
-        """Get daily inventory snapshots for a date range.
+        """Daily inventory snapshots (aggregated across warehouses) for a date range.
+
+        For per-warehouse SKU view, use stock_list. For rebalancing recommendations,
+        use analytics_rebalancing_recommendations. Also see: analytics_inventory_summary.
 
         Args:
             date_from: Start date (YYYY-MM-DD format).
@@ -66,7 +82,10 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool()
     async def analytics_inventory_summary(date_from: str, date_to: str) -> dict[str, Any]:
-        """Get aggregated inventory summary: total stock, reserved, available, low-stock count, and turnover rate.
+        """Aggregated inventory summary: total stock, reserved, available, low-stock count, turnover rate.
+
+        For per-SKU/per-warehouse details, use stock_list (or stock_low for low-stock).
+        Also see: analytics_inventory (daily series), analytics_rebalancing_recommendations.
 
         Args:
             date_from: Start date (YYYY-MM-DD format).
@@ -78,7 +97,11 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool()
     async def analytics_logistics(date_from: str, date_to: str) -> dict[str, Any]:
-        """Get daily logistics metrics for a date range.
+        """Daily aggregated logistics metrics (all carriers combined) for a date range.
+
+        For per-carrier on-time rate, use analytics_carriers_performance.
+        For shipped-then-cancelled forensics, use analytics_quick_cancellations.
+        Also see: analytics_logistics_performance (window aggregates).
 
         Args:
             date_from: Start date (YYYY-MM-DD format).
@@ -90,7 +113,10 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool()
     async def analytics_logistics_performance(date_from: str, date_to: str) -> dict[str, Any]:
-        """Get logistics performance analysis: shipment counts, delivery rate, on-time rate, average delivery time.
+        """Aggregated logistics performance over a window: total shipments, delivered count, on-time rate, avg delivery hours.
+
+        Aggregated across ALL carriers — for per-carrier breakdown use analytics_carriers_performance.
+        Also see: analytics_logistics (daily series), analytics_quick_cancellations.
 
         Args:
             date_from: Start date (YYYY-MM-DD format).
@@ -102,7 +128,11 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool()
     async def analytics_anomalies(date_from: str, date_to: str) -> dict[str, Any]:
-        """Detect anomalies in sales, inventory, and logistics data using rule-based thresholds.
+        """Detect anomalies in sales, inventory, and logistics using rule-based thresholds.
+
+        Returns items with severity (warning|critical) and category (sales|inventory|logistics|business).
+        For drill-down of a specific anomaly day, use analytics_period_comparison and orders_list.
+        Also see: analytics_quick_cancellations (carrier-handover anomalies), orders_customer_summary.
 
         Args:
             date_from: Start date (YYYY-MM-DD format).
@@ -225,7 +255,12 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool()
     async def analytics_optimization(date_from: str, date_to: str) -> dict[str, Any]:
-        """Get reorder optimization recommendations based on demand analysis and safety stock calculations.
+        """High-level reorder advice (single summary row): how many SKUs are below threshold and
+        a recommended quantity for the worst.
+
+        For per-SKU per-warehouse rebalancing with explicit cost/ROI model, use
+        analytics_rebalancing_recommendations — it is significantly more actionable.
+        For per-SKU velocity, use orders_sales_by_product.
 
         Args:
             date_from: Start date (YYYY-MM-DD format).
@@ -241,7 +276,11 @@ def register(mcp: FastMCP) -> None:
         date_from: str,
         date_to: str,
     ) -> dict[str, Any]:
-        """Generate a custom analytics report.
+        """Generate a multi-section analytics report combining several sub-metrics.
+
+        Prefer specific tools for narrow questions (analytics_sales_summary, analytics_carriers_performance,
+        analytics_anomalies). Use analytics_report only when the user asks for a 'full report' or
+        wants all sections together.
 
         Args:
             report_type: Type of report to generate (sales, inventory, logistics, full).

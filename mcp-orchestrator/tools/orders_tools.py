@@ -22,7 +22,13 @@ def register(mcp: FastMCP) -> None:
         offset: int = 0,
         fetch_all: bool = False,
     ) -> dict[str, Any]:
-        """List orders with optional filters and pagination.
+        """List orders (header-level: id, customer, status, total, dates). Does NOT include
+        line_items — use orders_get for that.
+
+        DO NOT iterate orders_get over this list for per-SKU velocity — use orders_sales_by_product.
+        For customer cohort/behaviour, use orders_customer_summary.
+        For bulk status change, use orders_bulk_update_status.
+        Also see: orders_search (free-text), orders_stats (status histogram).
 
         Args:
             status: Filter by order status (pending, confirmed, processing, shipped, delivered, completed, cancelled, returned).
@@ -48,7 +54,10 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool()
     async def orders_get(order_id: str) -> dict[str, Any]:
-        """Get detailed information about a specific order including its line items.
+        """Get a SINGLE order with its line items (product_id, name, quantity, unit_price, subtotal).
+
+        DO NOT loop this over a list of orders to compute aggregates — use orders_sales_by_product
+        for per-SKU velocity or orders_customer_summary for per-customer rollup.
 
         Args:
             order_id: The unique identifier of the order.
@@ -136,7 +145,11 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool()
     async def orders_stats() -> dict[str, Any]:
-        """Get order statistics: total count, total revenue, and breakdown by status."""
+        """Order statistics: total count, total revenue, and breakdown by status.
+
+        For per-SKU sales, use orders_sales_by_product. For per-customer, use orders_customer_summary.
+        For window-bounded analytics, use analytics_sales_summary.
+        """
         return await api_get("/api/v1/orders/stats")
 
     @mcp.tool()

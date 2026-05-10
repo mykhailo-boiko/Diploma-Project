@@ -19,7 +19,10 @@ def register(mcp: FastMCP) -> None:
         offset: int = 0,
         fetch_all: bool = False,
     ) -> dict[str, Any]:
-        """List notifications for the current user with optional filters.
+        """List notifications for the CURRENT user (service-user/admin in MCP context) with optional filters.
+
+        For per-user unread aggregate (e.g. "who has most unread"), use notifications_unread_counts.
+        For sending in bulk to many users, use notifications_bulk.
 
         Args:
             type: Filter by notification type (order_created, order_updated, order_cancelled, low_stock, stock_changed, shipment_created, shipment_updated, system).

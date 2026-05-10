@@ -176,7 +176,12 @@ def register(mcp: FastMCP) -> None:
         offset: int = 0,
         fetch_all: bool = False,
     ) -> dict[str, Any]:
-        """List stock levels with optional filters. Shows quantity, reserved, and available for each product-warehouse combination.
+        """List stock levels per (product, warehouse): quantity, reserved, available, min_threshold.
+
+        DO NOT use this to derive cross-warehouse rebalancing — use
+        analytics_rebalancing_recommendations (server-side pivot + cost model).
+        DO NOT use this for low-stock report — use stock_low (already filtered + joined).
+        Also see: stock_movements (history), analytics_inventory_summary (window aggregates).
 
         Args:
             product_id: Filter by product ID.
@@ -289,7 +294,12 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool()
     async def stock_low() -> dict[str, Any]:
-        """Get products with stock below their minimum threshold. Includes product name and SKU."""
+        """Get products with stock below their min_threshold. Includes product name, SKU, warehouse name.
+
+        For stock-out forecasting (days_to_stockout based on velocity), combine with
+        orders_sales_by_product. For cross-warehouse rebalancing, use
+        analytics_rebalancing_recommendations.
+        """
         return await api_get("/api/v1/stock/low")
 
     @mcp.tool()

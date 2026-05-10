@@ -27,6 +27,10 @@ def register(mcp: FastMCP) -> None:
     ) -> dict[str, Any]:
         """List shipments with optional filters and pagination.
 
+        For per-carrier on-time stats, use analytics_carriers_performance (do NOT iterate this list).
+        For shipped→cancelled forensics, use analytics_quick_cancellations.
+        For bulk reroute by city, use shipments_reassign_carrier (do NOT update individually).
+
         Args:
             status: Filter by shipment status (created, picked_up, in_transit, delivered, failed, returned).
             carrier_id: Filter by carrier ID.
@@ -110,7 +114,10 @@ def register(mcp: FastMCP) -> None:
         offset: int = 0,
         fetch_all: bool = False,
     ) -> dict[str, Any]:
-        """List carriers with optional filters and pagination.
+        """List carriers (basic info) with optional filters and pagination.
+
+        For per-carrier on-time rate and worst-cities breakdown, use analytics_carriers_performance.
+        For bulk shipment reroute by city, use shipments_reassign_carrier.
 
         Args:
             type: Filter by carrier type (ground, air, sea).

@@ -111,7 +111,10 @@ def register(mcp: FastMCP) -> None:
         offset: int = 0,
         fetch_all: bool = False,
     ) -> dict[str, Any]:
-        """List all users with optional filters (admin only).
+        """List users (admin only) with optional filters.
+
+        For sending notifications to a role group, combine with notifications_bulk
+        (extract user IDs by role here, then bulk-create notifications).
 
         Args:
             role: Filter by role (admin, warehouse_manager, logistics_manager, analyst, operator).
