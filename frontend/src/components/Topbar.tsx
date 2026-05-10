@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Bell, LogOut, User, MessageSquare } from "lucide-react";
+import { Bell, LogOut, User, Sparkles } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { formatRole } from "@/lib/roles";
 import { useUnreadCount } from "@/lib/use-notifications";
@@ -47,15 +47,19 @@ export default function Topbar({ onToggleChat, chatOpen }: TopbarProps) {
         <button
           onClick={onToggleChat}
           className={clsx(
-            "relative rounded-md p-2 hover:bg-gray-100",
+            "group relative inline-flex items-center gap-2 overflow-hidden rounded-full px-3 py-1.5 text-sm font-semibold text-white shadow-md shadow-blue-500/20 transition-all duration-200 hover:shadow-lg hover:shadow-blue-500/30 hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2",
             chatOpen
-              ? "bg-blue-50 text-blue-600 hover:bg-blue-100"
-              : "text-gray-500 hover:text-gray-700",
+              ? "bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600"
+              : "bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500",
           )}
           aria-label="AI Assistant"
-          title="AI Assistant"
+          title="AI Assistant — chat with your supply chain"
         >
-          <MessageSquare className="h-5 w-5" />
+          {!chatOpen && (
+            <span className="pointer-events-none absolute inset-0 -z-10 animate-pulse rounded-full bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-400 opacity-60 blur-md" />
+          )}
+          <Sparkles className="h-4 w-4 drop-shadow-sm" />
+          <span className="hidden sm:inline">AI Assistant</span>
         </button>
 
         <button
