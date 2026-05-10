@@ -411,6 +411,273 @@ func (s *Service) QueryAuditLog(ctx context.Context, filter analytics.AuditFilte
 	return s.storage.QueryAuditLog(ctx, filter)
 }
 
+func (s *Service) RunWhatIf(ctx context.Context, scenario analytics.WhatIfScenario) (analytics.WhatIfResult, error) {
+	switch scenario.Kind {
+	case "carrier_drop":
+		return s.whatIfCarrierDrop(ctx, scenario)
+	case "capacity_increase":
+		return s.whatIfCapacityIncrease(ctx, scenario)
+	case "price_change":
+		return s.whatIfPriceChange(ctx, scenario)
+	case "promo_burst":
+		return s.whatIfPromoBurst(ctx, scenario)
+	default:
+		return analytics.WhatIfResult{}, fmt.Errorf("unsupported scenario kind: %s (supported: carrier_drop, capacity_increase, price_change, promo_burst)", scenario.Kind)
+	}
+}
+
+func (s *Service) whatIfCarrierDrop(ctx context.Context, scenario analytics.WhatIfScenario) (analytics.WhatIfResult, error) {
+	carrierID, _ := scenario.Params["carrier_id"].(string)
+	if carrierID == "" {
+		return analytics.WhatIfResult{}, fmt.Errorf("carrier_id is required")
+	}
+	now := time.Now().UTC()
+	from := now.AddDate(0, 0, -60)
+	carriers, err := s.storage.GetCarrierPerformance(ctx, from, now, 168, 5)
+	if err != nil {
+		return analytics.WhatIfResult{}, err
+	}
+	var dropped *analytics.CarrierPerformance
+	others := make([]analytics.CarrierPerformance, 0)
+	for i := range carriers {
+		if carriers[i].CarrierID == carrierID {
+			dropped = &carriers[i]
+		} else {
+			others = append(others, carriers[i])
+		}
+	}
+	if dropped == nil {
+		return analytics.WhatIfResult{}, fmt.Errorf("carrier %s not found in 60-day window", carrierID)
+	}
+
+	var sumOnTime, sumDelivered float64
+	var sumOthersOnTime, sumOthersDelivered float64
+	for _, c := range carriers {
+		sumOnTime += float64(c.OnTime)
+		sumDelivered += float64(c.Delivered)
+	}
+	for _, c := range others {
+		sumOthersOnTime += float64(c.OnTime)
+		sumOthersDelivered += float64(c.Delivered)
+	}
+	baselineOnTime := 0.0
+	if sumDelivered > 0 {
+		baselineOnTime = sumOnTime / sumDelivered * 100
+	}
+	projectedOnTime := 0.0
+	if sumOthersDelivered > 0 {
+		projectedOnTime = sumOthersOnTime / sumOthersDelivered * 100
+	}
+
+	baseline := map[string]float64{
+		"on_time_rate_pct":  baselineOnTime,
+		"total_delivered":   sumDelivered,
+		"dropped_delivered": float64(dropped.Delivered),
+	}
+	projected := map[string]float64{
+		"on_time_rate_pct": projectedOnTime,
+		"total_delivered":  sumOthersDelivered,
+	}
+	delta := map[string]float64{"on_time_rate_pct": projectedOnTime - baselineOnTime}
+	deltaPct := map[string]float64{}
+	if baselineOnTime > 0 {
+		deltaPct["on_time_rate_pct"] = ((projectedOnTime - baselineOnTime) / baselineOnTime) * 100
+	}
+
+	return analytics.WhatIfResult{
+		Scenario:     scenario,
+		Baseline:     baseline,
+		Projected:    projected,
+		Delta:        delta,
+		DeltaPercent: deltaPct,
+		Assumptions: []string{
+			"Demand is conserved — would-be shipments redistribute equally across remaining carriers",
+			"Remaining carriers' historical on-time rate generalizes to extra load",
+			"Ignores secondary capacity effects (overloaded carriers may degrade)",
+		},
+		Confidence: "medium",
+		HumanSummary: fmt.Sprintf(
+			"Dropping %s (delivered %d in last 60d, %.1f%% on-time) would shift the platform on-time rate from %.1f%% to %.1f%% (Δ %+.1fpp)",
+			dropped.CarrierName, dropped.Delivered, dropped.OnTimeRate*100,
+			baselineOnTime, projectedOnTime, projectedOnTime-baselineOnTime,
+		),
+	}, nil
+}
+
+func (s *Service) whatIfCapacityIncrease(_ context.Context, scenario analytics.WhatIfScenario) (analytics.WhatIfResult, error) {
+	warehouse, _ := scenario.Params["warehouse_name"].(string)
+	pctRaw := toFloat(scenario.Params["capacity_increase_pct"])
+	if pctRaw <= 0 {
+		return analytics.WhatIfResult{}, fmt.Errorf("capacity_increase_pct must be > 0")
+	}
+	if warehouse == "" {
+		return analytics.WhatIfResult{}, fmt.Errorf("warehouse_name is required")
+	}
+	baseline := map[string]float64{
+		"warehouse_overflow_index": 1.0,
+	}
+	projected := map[string]float64{
+		"warehouse_overflow_index": 1.0 / (1.0 + pctRaw/100.0),
+	}
+	delta := map[string]float64{"warehouse_overflow_index": projected["warehouse_overflow_index"] - baseline["warehouse_overflow_index"]}
+	deltaPct := map[string]float64{"warehouse_overflow_index": -pctRaw / (1.0 + pctRaw/100.0)}
+
+	return analytics.WhatIfResult{
+		Scenario:     scenario,
+		Baseline:     baseline,
+		Projected:    projected,
+		Delta:        delta,
+		DeltaPercent: deltaPct,
+		Assumptions: []string{
+			"Throughput scales linearly with capacity (no diminishing returns)",
+			"No new bottlenecks elsewhere (carriers, picking) introduced",
+			"Overflow index = current_load / capacity, so increasing capacity by X% divides the index by (1 + X/100)",
+		},
+		Confidence: "low",
+		HumanSummary: fmt.Sprintf(
+			"Increasing %s capacity by %.0f%% would reduce its load-vs-capacity index from 1.00 to %.2f (assuming linear scaling)",
+			warehouse, pctRaw, projected["warehouse_overflow_index"],
+		),
+	}, nil
+}
+
+func (s *Service) whatIfPriceChange(ctx context.Context, scenario analytics.WhatIfScenario) (analytics.WhatIfResult, error) {
+	category, _ := scenario.Params["category"].(string)
+	pct := toFloat(scenario.Params["price_change_pct"])
+	elasticity := -1.0
+	if e := toFloat(scenario.Params["elasticity"]); e != 0 {
+		elasticity = e
+	}
+	if category == "" {
+		return analytics.WhatIfResult{}, fmt.Errorf("category is required")
+	}
+
+	now := time.Now().UTC()
+	from := now.AddDate(0, 0, -30)
+	baselineRevenue, err := s.storage.GetMetricValue(ctx, "revenue", from, now)
+	if err != nil {
+		return analytics.WhatIfResult{}, err
+	}
+	categoryShare := 1.0 / 11.0
+	if v := toFloat(scenario.Params["category_revenue_share"]); v > 0 && v <= 1 {
+		categoryShare = v
+	}
+
+	priceFactor := 1.0 + pct/100.0
+	demandFactor := 1.0 + elasticity*(pct/100.0)
+	if demandFactor < 0 {
+		demandFactor = 0
+	}
+	revenueFactor := priceFactor * demandFactor
+
+	categoryBaseline := baselineRevenue * categoryShare
+	categoryProjected := categoryBaseline * revenueFactor
+	rest := baselineRevenue * (1 - categoryShare)
+	totalProjected := rest + categoryProjected
+
+	baseline := map[string]float64{
+		"category_revenue_30d": categoryBaseline,
+		"total_revenue_30d":    baselineRevenue,
+	}
+	projected := map[string]float64{
+		"category_revenue_30d": categoryProjected,
+		"total_revenue_30d":    totalProjected,
+	}
+	delta := map[string]float64{
+		"category_revenue_30d": categoryProjected - categoryBaseline,
+		"total_revenue_30d":    totalProjected - baselineRevenue,
+	}
+	deltaPct := map[string]float64{
+		"category_revenue_30d": (revenueFactor - 1) * 100,
+	}
+	if baselineRevenue > 0 {
+		deltaPct["total_revenue_30d"] = ((totalProjected - baselineRevenue) / baselineRevenue) * 100
+	}
+
+	return analytics.WhatIfResult{
+		Scenario:     scenario,
+		Baseline:     baseline,
+		Projected:    projected,
+		Delta:        delta,
+		DeltaPercent: deltaPct,
+		Assumptions: []string{
+			fmt.Sprintf("Constant price elasticity of demand = %.2f (default -1.0, override via 'elasticity' param)", elasticity),
+			fmt.Sprintf("Category '%s' carries %.0f%% of total revenue (override via 'category_revenue_share')", category, categoryShare*100),
+			"30-day baseline; ignores seasonality, cross-elasticity, competitor response",
+		},
+		Confidence: "low",
+		HumanSummary: fmt.Sprintf(
+			"Changing %s prices by %+.0f%% (elasticity %.2f) yields category revenue Δ %+.1f%% and total revenue Δ %+.1f%%",
+			category, pct, elasticity, deltaPct["category_revenue_30d"], deltaPct["total_revenue_30d"],
+		),
+	}, nil
+}
+
+func (s *Service) whatIfPromoBurst(ctx context.Context, scenario analytics.WhatIfScenario) (analytics.WhatIfResult, error) {
+	multiplier := toFloat(scenario.Params["order_multiplier"])
+	durationDays := int(toFloat(scenario.Params["duration_days"]))
+	if multiplier <= 0 {
+		return analytics.WhatIfResult{}, fmt.Errorf("order_multiplier must be > 0")
+	}
+	if durationDays <= 0 {
+		durationDays = 7
+	}
+
+	now := time.Now().UTC()
+	from := now.AddDate(0, 0, -30)
+	baselineRevenue, err := s.storage.GetMetricValue(ctx, "revenue", from, now)
+	if err != nil {
+		return analytics.WhatIfResult{}, err
+	}
+	dailyAvg := baselineRevenue / 30.0
+	burstExtra := dailyAvg * float64(durationDays) * (multiplier - 1.0)
+
+	baseline := map[string]float64{
+		"projected_revenue_burst_window": dailyAvg * float64(durationDays),
+	}
+	projected := map[string]float64{
+		"projected_revenue_burst_window": dailyAvg * float64(durationDays) * multiplier,
+	}
+	delta := map[string]float64{
+		"projected_revenue_burst_window": burstExtra,
+	}
+	deltaPct := map[string]float64{
+		"projected_revenue_burst_window": (multiplier - 1.0) * 100,
+	}
+
+	return analytics.WhatIfResult{
+		Scenario:     scenario,
+		Baseline:     baseline,
+		Projected:    projected,
+		Delta:        delta,
+		DeltaPercent: deltaPct,
+		Assumptions: []string{
+			fmt.Sprintf("Burst multiplier %.2fx applied uniformly to recent-30d daily average", multiplier),
+			"Assumes inventory and carrier capacity can absorb the burst (otherwise stock-out / late shipments will dampen the realized number)",
+			fmt.Sprintf("Burst window: %d days", durationDays),
+		},
+		Confidence: "low",
+		HumanSummary: fmt.Sprintf(
+			"A %dx demand burst over %d days would add ~$%.0f revenue (vs $%.0f baseline)",
+			int(multiplier), durationDays, burstExtra, baseline["projected_revenue_burst_window"],
+		),
+	}, nil
+}
+
+func toFloat(v any) float64 {
+	switch x := v.(type) {
+	case float64:
+		return x
+	case float32:
+		return float64(x)
+	case int:
+		return float64(x)
+	case int64:
+		return float64(x)
+	}
+	return 0
+}
+
 func (s *Service) GetForecast(
 	ctx context.Context, metric, method string,
 	historyDays, horizonDays int,

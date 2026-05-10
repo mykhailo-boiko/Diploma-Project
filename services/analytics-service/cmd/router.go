@@ -43,6 +43,7 @@ func newRouter(ctrl *controller.AnalyticsController, nc *natspkg.Client) http.Ha
 	mux.HandleFunc("GET /api/v1/analytics/period-comparison", ctrl.GetPeriodComparison)
 	mux.HandleFunc("GET /api/v1/analytics/audit-log", ctrl.QueryAuditLog)
 	mux.HandleFunc("GET /api/v1/analytics/forecast", ctrl.GetForecast)
+	mux.HandleFunc("POST /api/v1/analytics/what-if", ctrl.RunWhatIf)
 	mux.HandleFunc("POST /api/v1/analytics/report", ctrl.GenerateReport)
 
 	return handler

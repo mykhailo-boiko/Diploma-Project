@@ -149,6 +149,43 @@ def register(mcp: FastMCP) -> None:
         })
 
     @mcp.tool()
+    async def analytics_what_if(
+        kind: str,
+        params: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Counterfactual simulator — projects business impact of a hypothetical change.
+        Use for ANY 'what if', 'simulate', 'what would happen if', 'project impact of' question.
+
+        Supported scenarios:
+
+            kind="carrier_drop" — what if we disable carrier X?
+              params: {"carrier_id": uuid}
+              Returns: platform on-time rate baseline vs projected (excluding that carrier).
+
+            kind="capacity_increase" — what if warehouse X capacity is +N%?
+              params: {"warehouse_name": str, "capacity_increase_pct": float}
+              Returns: load-vs-capacity overflow index baseline vs projected.
+
+            kind="price_change" — what if we change prices in category X by N%?
+              params: {"category": str, "price_change_pct": float,
+                       "elasticity": float (default -1.0),
+                       "category_revenue_share": float (default 0.09 = 1/11 categories)}
+              Returns: category revenue + total revenue baseline vs projected.
+
+            kind="promo_burst" — what if demand spikes Nx for D days?
+              params: {"order_multiplier": float, "duration_days": int (default 7)}
+              Returns: projected revenue uplift during burst window.
+
+        Every result includes assumptions[] and confidence_qualitative (low|medium|high).
+        These are SIMPLE models — quote the assumptions list in your answer for honesty.
+
+        Args:
+            kind: One of carrier_drop, capacity_increase, price_change, promo_burst.
+            params: Scenario-specific parameters (see per-kind list above).
+        """
+        return await api_post("/api/v1/analytics/what-if", {"kind": kind, "params": params})
+
+    @mcp.tool()
     async def analytics_forecast(
         metric: str,
         horizon_days: int = 14,

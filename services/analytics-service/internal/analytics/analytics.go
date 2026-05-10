@@ -112,6 +112,22 @@ type Report struct {
 	Data       any    `json:"data"`
 }
 
+type WhatIfScenario struct {
+	Kind   string         `json:"kind"`
+	Params map[string]any `json:"params"`
+}
+
+type WhatIfResult struct {
+	Scenario       WhatIfScenario     `json:"scenario"`
+	Baseline       map[string]float64 `json:"baseline"`
+	Projected      map[string]float64 `json:"projected"`
+	Delta          map[string]float64 `json:"delta"`
+	DeltaPercent   map[string]float64 `json:"delta_percent"`
+	Assumptions    []string           `json:"assumptions"`
+	Confidence     string             `json:"confidence_qualitative"`
+	HumanSummary   string             `json:"human_summary"`
+}
+
 type ForecastPoint struct {
 	Date           time.Time `json:"date"`
 	Value          float64   `json:"value"`

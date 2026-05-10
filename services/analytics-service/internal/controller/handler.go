@@ -32,6 +32,7 @@ type AnalyticsService interface {
 	GetPeriodComparison(ctx context.Context, metric string, aFrom, aTo, bFrom, bTo time.Time, aLabel, bLabel string) (analytics.PeriodComparison, error)
 	QueryAuditLog(ctx context.Context, filter analytics.AuditFilter) ([]analytics.AuditEntry, error)
 	GetForecast(ctx context.Context, metric, method string, historyDays, horizonDays int) (analytics.Forecast, error)
+	RunWhatIf(ctx context.Context, scenario analytics.WhatIfScenario) (analytics.WhatIfResult, error)
 }
 
 type AnalyticsController struct {
@@ -246,6 +247,25 @@ func (c *AnalyticsController) GenerateReport(w http.ResponseWriter, r *http.Requ
 	}
 
 	httpresponse.OK(w, report)
+}
+
+func (c *AnalyticsController) RunWhatIf(w http.ResponseWriter, r *http.Request) {
+	var req analytics.WhatIfScenario
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpresponse.BadRequest(w, "invalid_request", "invalid request body")
+		return
+	}
+	if req.Kind == "" {
+		httpresponse.BadRequest(w, "validation_error", "kind is required")
+		return
+	}
+	result, err := c.svc.RunWhatIf(r.Context(), req)
+	if err != nil {
+		c.log.Error("what-if failed", zap.Error(err))
+		httpresponse.BadRequest(w, "internal_error", err.Error())
+		return
+	}
+	httpresponse.OK(w, result)
 }
 
 func (c *AnalyticsController) GetForecast(w http.ResponseWriter, r *http.Request) {
