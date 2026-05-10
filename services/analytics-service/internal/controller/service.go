@@ -411,6 +411,300 @@ func (s *Service) QueryAuditLog(ctx context.Context, filter analytics.AuditFilte
 	return s.storage.QueryAuditLog(ctx, filter)
 }
 
+func (s *Service) GetForecast(
+	ctx context.Context, metric, method string,
+	historyDays, horizonDays int,
+) (analytics.Forecast, error) {
+	if historyDays <= 0 {
+		historyDays = 30
+	}
+	if horizonDays <= 0 {
+		horizonDays = 14
+	}
+	if method == "" {
+		method = "linear"
+	}
+
+	now := time.Now().UTC().Truncate(24 * time.Hour)
+	from := now.AddDate(0, 0, -historyDays)
+	to := now
+
+	history, err := s.storage.GetDailyMetricSeries(ctx, metric, from, to)
+	if err != nil {
+		return analytics.Forecast{}, err
+	}
+
+	if len(history) < 3 {
+		return analytics.Forecast{}, fmt.Errorf("insufficient history (%d days) — need at least 3 points to forecast", len(history))
+	}
+
+	historyFilled := fillMissingDays(history, from, to)
+
+	values := make([]float64, len(historyFilled))
+	for i, p := range historyFilled {
+		values[i] = p.Value
+	}
+
+	var forecast []analytics.ForecastPoint
+	var mape float64
+	switch method {
+	case "rolling-avg":
+		forecast = forecastRollingAvg(historyFilled, horizonDays, 7)
+		mape = backtestMAPE(values, func(train []float64, h int) []float64 {
+			pts := forecastRollingAvg(makeFakePoints(train, now), h, 7)
+			out := make([]float64, len(pts))
+			for i, p := range pts {
+				out[i] = p.Value
+			}
+			return out
+		})
+	case "ets-simple":
+		forecast = forecastETS(historyFilled, horizonDays, 0.3, 0.2)
+		mape = backtestMAPE(values, func(train []float64, h int) []float64 {
+			pts := forecastETS(makeFakePoints(train, now), h, 0.3, 0.2)
+			out := make([]float64, len(pts))
+			for i, p := range pts {
+				out[i] = p.Value
+			}
+			return out
+		})
+	default:
+		method = "linear"
+		forecast = forecastLinear(historyFilled, horizonDays)
+		mape = backtestMAPE(values, func(train []float64, h int) []float64 {
+			pts := forecastLinear(makeFakePoints(train, now), h)
+			out := make([]float64, len(pts))
+			for i, p := range pts {
+				out[i] = p.Value
+			}
+			return out
+		})
+	}
+
+	confidence := "low"
+	if mape <= 15 {
+		confidence = "high"
+	} else if mape <= 30 {
+		confidence = "medium"
+	}
+
+	return analytics.Forecast{
+		Metric:        metric,
+		Method:        method,
+		HorizonDays:   horizonDays,
+		HistoryWindow: historyDays,
+		History:       historyFilled,
+		Forecast:      forecast,
+		BacktestMAPE:  mape,
+		Confidence:    confidence,
+		Assumptions: []string{
+			fmt.Sprintf("History window: trailing %d days", historyDays),
+			"Missing days filled with zero",
+			"Confidence interval is mean ± 1.5σ of residuals",
+			"Linear assumes constant trend; rolling-avg assumes recent stationarity; ets-simple captures level + trend",
+		},
+	}, nil
+}
+
+func fillMissingDays(points []analytics.ForecastPoint, from, to time.Time) []analytics.ForecastPoint {
+	have := map[string]float64{}
+	for _, p := range points {
+		have[p.Date.Format("2006-01-02")] = p.Value
+	}
+	var out []analytics.ForecastPoint
+	for d := from; !d.After(to); d = d.AddDate(0, 0, 1) {
+		out = append(out, analytics.ForecastPoint{Date: d, Value: have[d.Format("2006-01-02")]})
+	}
+	return out
+}
+
+func makeFakePoints(values []float64, end time.Time) []analytics.ForecastPoint {
+	out := make([]analytics.ForecastPoint, len(values))
+	for i, v := range values {
+		out[i] = analytics.ForecastPoint{
+			Date:  end.AddDate(0, 0, -(len(values) - 1 - i)),
+			Value: v,
+		}
+	}
+	return out
+}
+
+func forecastLinear(history []analytics.ForecastPoint, horizon int) []analytics.ForecastPoint {
+	n := float64(len(history))
+	if n < 2 {
+		return nil
+	}
+
+	var sumX, sumY, sumXY, sumXX float64
+	for i, p := range history {
+		x := float64(i)
+		sumX += x
+		sumY += p.Value
+		sumXY += x * p.Value
+		sumXX += x * x
+	}
+	denom := n*sumXX - sumX*sumX
+	slope, intercept := 0.0, sumY/n
+	if denom != 0 {
+		slope = (n*sumXY - sumX*sumY) / denom
+		intercept = (sumY - slope*sumX) / n
+	}
+
+	var residuals []float64
+	for i, p := range history {
+		pred := intercept + slope*float64(i)
+		residuals = append(residuals, p.Value-pred)
+	}
+	band := 1.5 * stddev(residuals)
+
+	last := history[len(history)-1].Date
+	out := make([]analytics.ForecastPoint, 0, horizon)
+	for i := 1; i <= horizon; i++ {
+		x := float64(len(history) - 1 + i)
+		v := intercept + slope*x
+		if v < 0 {
+			v = 0
+		}
+		low := v - band
+		if low < 0 {
+			low = 0
+		}
+		out = append(out, analytics.ForecastPoint{
+			Date:           last.AddDate(0, 0, i),
+			Value:          v,
+			ConfidenceLow:  low,
+			ConfidenceHigh: v + band,
+		})
+	}
+	return out
+}
+
+func forecastRollingAvg(history []analytics.ForecastPoint, horizon, window int) []analytics.ForecastPoint {
+	if len(history) == 0 {
+		return nil
+	}
+	if window > len(history) {
+		window = len(history)
+	}
+	sum := 0.0
+	for i := len(history) - window; i < len(history); i++ {
+		sum += history[i].Value
+	}
+	avg := sum / float64(window)
+
+	var residuals []float64
+	for i := window; i < len(history); i++ {
+		s := 0.0
+		for j := i - window; j < i; j++ {
+			s += history[j].Value
+		}
+		residuals = append(residuals, history[i].Value-s/float64(window))
+	}
+	band := 1.5 * stddev(residuals)
+
+	last := history[len(history)-1].Date
+	out := make([]analytics.ForecastPoint, 0, horizon)
+	for i := 1; i <= horizon; i++ {
+		low := avg - band
+		if low < 0 {
+			low = 0
+		}
+		out = append(out, analytics.ForecastPoint{
+			Date:           last.AddDate(0, 0, i),
+			Value:          avg,
+			ConfidenceLow:  low,
+			ConfidenceHigh: avg + band,
+		})
+	}
+	return out
+}
+
+func forecastETS(history []analytics.ForecastPoint, horizon int, alpha, beta float64) []analytics.ForecastPoint {
+	n := len(history)
+	if n < 2 {
+		return nil
+	}
+
+	level := history[0].Value
+	trend := history[1].Value - history[0].Value
+	var residuals []float64
+	for i := 1; i < n; i++ {
+		pred := level + trend
+		residuals = append(residuals, history[i].Value-pred)
+		newLevel := alpha*history[i].Value + (1-alpha)*(level+trend)
+		newTrend := beta*(newLevel-level) + (1-beta)*trend
+		level, trend = newLevel, newTrend
+	}
+	band := 1.5 * stddev(residuals)
+
+	last := history[n-1].Date
+	out := make([]analytics.ForecastPoint, 0, horizon)
+	for i := 1; i <= horizon; i++ {
+		v := level + float64(i)*trend
+		if v < 0 {
+			v = 0
+		}
+		low := v - band
+		if low < 0 {
+			low = 0
+		}
+		out = append(out, analytics.ForecastPoint{
+			Date:           last.AddDate(0, 0, i),
+			Value:          v,
+			ConfidenceLow:  low,
+			ConfidenceHigh: v + band,
+		})
+	}
+	return out
+}
+
+func stddev(xs []float64) float64 {
+	if len(xs) < 2 {
+		return 0
+	}
+	var sum, sumSq float64
+	for _, x := range xs {
+		sum += x
+		sumSq += x * x
+	}
+	n := float64(len(xs))
+	mean := sum / n
+	variance := sumSq/n - mean*mean
+	if variance < 0 {
+		variance = 0
+	}
+	return math.Sqrt(variance)
+}
+
+func backtestMAPE(values []float64, forecastFn func(train []float64, h int) []float64) float64 {
+	if len(values) < 14 {
+		return 0
+	}
+	split := int(float64(len(values)) * 0.8)
+	if split < 7 || split >= len(values) {
+		return 0
+	}
+	train := values[:split]
+	test := values[split:]
+	predicted := forecastFn(train, len(test))
+	if len(predicted) != len(test) {
+		return 0
+	}
+	var sum float64
+	count := 0
+	for i := range test {
+		if test[i] == 0 {
+			continue
+		}
+		sum += math.Abs((test[i] - predicted[i]) / test[i])
+		count++
+	}
+	if count == 0 {
+		return 0
+	}
+	return (sum / float64(count)) * 100.0
+}
+
 func (s *Service) GetPeriodComparison(
 	ctx context.Context, metric string,
 	aFrom, aTo, bFrom, bTo time.Time,

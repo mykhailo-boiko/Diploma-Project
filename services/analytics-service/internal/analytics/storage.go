@@ -187,6 +187,60 @@ func (s *PostgresStorage) GetInventorySnapshots(ctx context.Context, from, to ti
 	return results, nil
 }
 
+func (s *PostgresStorage) GetDailyMetricSeries(ctx context.Context, metric string, from, to time.Time) ([]ForecastPoint, error) {
+	var query string
+	switch metric {
+	case "revenue":
+		query = `
+			SELECT date_trunc('day', created_at)::date AS d,
+			       COALESCE(SUM(total_amount), 0)::float8
+			FROM orders.orders
+			WHERE deleted_at IS NULL
+				AND status NOT IN ('cancelled','returned')
+				AND created_at >= $1 AND created_at <= $2
+			GROUP BY d ORDER BY d`
+	case "order_count":
+		query = `
+			SELECT date_trunc('day', created_at)::date AS d,
+			       COUNT(*)::float8
+			FROM orders.orders
+			WHERE deleted_at IS NULL
+				AND status NOT IN ('cancelled','returned')
+				AND created_at >= $1 AND created_at <= $2
+			GROUP BY d ORDER BY d`
+	case "shipment_count":
+		query = `
+			SELECT date_trunc('day', created_at)::date AS d,
+			       COUNT(*)::float8
+			FROM logistics.shipment
+			WHERE deleted_at IS NULL
+				AND created_at >= $1 AND created_at <= $2
+			GROUP BY d ORDER BY d`
+	default:
+		return nil, fmt.Errorf("unsupported metric for series: %s (supported: revenue, order_count, shipment_count)", metric)
+	}
+
+	rows, err := s.pool.Query(ctx, query, from, to)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query daily series for %s: %w", metric, err)
+	}
+	defer rows.Close()
+
+	var points []ForecastPoint
+	for rows.Next() {
+		var d time.Time
+		var v float64
+		if err := rows.Scan(&d, &v); err != nil {
+			return nil, fmt.Errorf("failed to scan series point: %w", err)
+		}
+		points = append(points, ForecastPoint{Date: d, Value: v})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate series: %w", err)
+	}
+	return points, nil
+}
+
 func (s *PostgresStorage) QueryAuditLog(ctx context.Context, f AuditFilter) ([]AuditEntry, error) {
 	limit := f.Limit
 	if limit <= 0 {

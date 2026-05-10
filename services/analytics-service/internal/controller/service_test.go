@@ -123,6 +123,10 @@ func (m *mockStorage) QueryAuditLog(_ context.Context, _ analytics.AuditFilter) 
 	return []analytics.AuditEntry{}, nil
 }
 
+func (m *mockStorage) GetDailyMetricSeries(_ context.Context, _ string, _, _ time.Time) ([]analytics.ForecastPoint, error) {
+	return []analytics.ForecastPoint{}, nil
+}
+
 func (m *mockStorage) GetCarrierPerformance(_ context.Context, _, _ time.Time, _ int, _ int) ([]analytics.CarrierPerformance, error) {
 	return []analytics.CarrierPerformance{}, nil
 }

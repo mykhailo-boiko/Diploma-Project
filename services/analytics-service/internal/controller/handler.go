@@ -31,6 +31,7 @@ type AnalyticsService interface {
 	GetCustomerProfile360(ctx context.Context, customerName string, recentN int, topCategoriesN int) (analytics.CustomerProfile360, error)
 	GetPeriodComparison(ctx context.Context, metric string, aFrom, aTo, bFrom, bTo time.Time, aLabel, bLabel string) (analytics.PeriodComparison, error)
 	QueryAuditLog(ctx context.Context, filter analytics.AuditFilter) ([]analytics.AuditEntry, error)
+	GetForecast(ctx context.Context, metric, method string, historyDays, horizonDays int) (analytics.Forecast, error)
 }
 
 type AnalyticsController struct {
@@ -245,6 +246,40 @@ func (c *AnalyticsController) GenerateReport(w http.ResponseWriter, r *http.Requ
 	}
 
 	httpresponse.OK(w, report)
+}
+
+func (c *AnalyticsController) GetForecast(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	metric := q.Get("metric")
+	if metric == "" {
+		httpresponse.BadRequest(w, "validation_error", "metric is required")
+		return
+	}
+	method := q.Get("method")
+	if method == "" {
+		method = "linear"
+	}
+
+	horizonDays := 14
+	if s := q.Get("horizon_days"); s != "" {
+		if v, err := strconv.Atoi(s); err == nil && v > 0 {
+			horizonDays = v
+		}
+	}
+	historyDays := 30
+	if s := q.Get("history_days"); s != "" {
+		if v, err := strconv.Atoi(s); err == nil && v > 0 {
+			historyDays = v
+		}
+	}
+
+	result, err := c.svc.GetForecast(r.Context(), metric, method, historyDays, horizonDays)
+	if err != nil {
+		c.log.Error("Failed to forecast", zap.Error(err))
+		httpresponse.BadRequest(w, "internal_error", err.Error())
+		return
+	}
+	httpresponse.OK(w, result)
 }
 
 func (c *AnalyticsController) QueryAuditLog(w http.ResponseWriter, r *http.Request) {

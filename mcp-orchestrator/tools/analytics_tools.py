@@ -149,6 +149,41 @@ def register(mcp: FastMCP) -> None:
         })
 
     @mcp.tool()
+    async def analytics_forecast(
+        metric: str,
+        horizon_days: int = 14,
+        history_days: int = 30,
+        method: str = "linear",
+    ) -> dict[str, Any]:
+        """Time-series forecast for a metric over a horizon, with confidence interval and
+        backtest MAPE accuracy. SERVER-SIDE — do NOT compute linear extrapolation manually.
+
+        Supported metrics: revenue, order_count, shipment_count.
+        Supported methods:
+            - linear: linear regression on history (good for trends)
+            - rolling-avg: 7-day moving average projection (good for stationary series)
+            - ets-simple: Holt's linear trend exponential smoothing (good for mild trends with noise)
+
+        Returns: {metric, method, horizon_days, history_window_days, history[], forecast[],
+                  backtest_mape, confidence_qualitative (high|medium|low), assumptions[]}.
+        Each point has date, value, confidence_low, confidence_high (mean ± 1.5σ of residuals).
+
+        ALWAYS quote method + backtest_mape + confidence label in your reply for honesty.
+
+        Args:
+            metric: One of revenue, order_count, shipment_count.
+            horizon_days: How many days to forecast forward (default 14).
+            history_days: Trailing window used to fit the model (default 30).
+            method: linear | rolling-avg | ets-simple.
+        """
+        return await api_get("/api/v1/analytics/forecast", {
+            "metric": metric,
+            "horizon_days": horizon_days,
+            "history_days": history_days,
+            "method": method,
+        })
+
+    @mcp.tool()
     async def audit_query(
         actor_email: str | None = None,
         action: str | None = None,

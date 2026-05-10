@@ -112,6 +112,25 @@ type Report struct {
 	Data       any    `json:"data"`
 }
 
+type ForecastPoint struct {
+	Date           time.Time `json:"date"`
+	Value          float64   `json:"value"`
+	ConfidenceLow  float64   `json:"confidence_low,omitempty"`
+	ConfidenceHigh float64   `json:"confidence_high,omitempty"`
+}
+
+type Forecast struct {
+	Metric          string          `json:"metric"`
+	Method          string          `json:"method"`
+	HorizonDays     int             `json:"horizon_days"`
+	HistoryWindow   int             `json:"history_window_days"`
+	History         []ForecastPoint `json:"history"`
+	Forecast        []ForecastPoint `json:"forecast"`
+	BacktestMAPE    float64         `json:"backtest_mape,omitempty"`
+	Confidence      string          `json:"confidence_qualitative"`
+	Assumptions     []string        `json:"assumptions"`
+}
+
 type AuditEntry struct {
 	ID           string    `json:"id"`
 	ActorUserID  string    `json:"actor_user_id"`
@@ -254,6 +273,7 @@ type Storage interface {
 	GetCustomerProfile360(ctx context.Context, customerName string, recentN int, topCategoriesN int) (CustomerProfile360, error)
 	GetMetricValue(ctx context.Context, metric string, from, to time.Time) (float64, error)
 	QueryAuditLog(ctx context.Context, filter AuditFilter) ([]AuditEntry, error)
+	GetDailyMetricSeries(ctx context.Context, metric string, from, to time.Time) ([]ForecastPoint, error)
 }
 
 var ErrCustomerNotFound = errors.New("customer not found")
