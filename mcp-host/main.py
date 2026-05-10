@@ -40,6 +40,8 @@ async def lifespan(app: FastAPI):
     redis_client = aioredis.from_url(REDIS_URL, decode_responses=False)
     _plan_store = PlanStore(redis_client)
     _context_store = ContextStore(redis_client)
+    cache_redis = aioredis.from_url(REDIS_URL, decode_responses=True)
+    mcp.attach_cache(cache_redis)
     logger.info("Redis connected: %s", REDIS_URL)
 
     await mcp.connect()
