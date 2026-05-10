@@ -289,6 +289,8 @@ services:
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
       GATEWAY_URL: http://api-gateway:8080
+      SERVICE_USER_EMAIL: ${ADMIN_EMAIL:-admin@chainorchestra.local}
+      SERVICE_USER_PASSWORD: ${ADMIN_PASSWORD:-}
       MCP_SERVER_CMD: python
       MCP_SERVER_ARGS: /app/mcp-orchestrator/main.py
       MCP_REQUEST_TIMEOUT: "30"
