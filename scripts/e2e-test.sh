@@ -1,19 +1,27 @@
 #!/usr/bin/env bash
+# ============================================================
+# ChainOrchestra — End-to-End Integration Test Suite (TASK-032)
+# Tests 5 scenarios: order workflow, multi-step, analytics,
+# RBAC enforcement, and full event chain.
+# Requires: running docker compose stack + seed data
+# Usage: ./scripts/e2e-test.sh
+# ============================================================
 set -uo pipefail
 
 GATEWAY_URL="${GATEWAY_URL:-http://localhost:8080}"
 MCP_URL="${MCP_URL:-http://localhost:8090}"
 ADMIN_EMAIL="${ADMIN_EMAIL:-admin@chainorchestra.local}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin123}"
-OPERATOR_EMAIL="ivan.petrov@chainorchestra.local"
+OPERATOR_EMAIL="ivan.petrenko@chainorchestra.local"
 OPERATOR_PASSWORD="Operator1!"
-WAREHOUSE_EMAIL="maria.kuznetsova@chainorchestra.local"
+WAREHOUSE_EMAIL="maria.kovalenko@chainorchestra.local"
 WAREHOUSE_PASSWORD="Warehouse1!"
-LOGISTICS_EMAIL="alexei.volkov@chainorchestra.local"
+LOGISTICS_EMAIL="oleksii.shevchenko@chainorchestra.local"
 LOGISTICS_PASSWORD="Logistics1!"
-ANALYST_EMAIL="elena.sokolova@chainorchestra.local"
+ANALYST_EMAIL="olena.bondarenko@chainorchestra.local"
 ANALYST_PASSWORD="Analyst1!"
 
+# Colors
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
@@ -26,6 +34,7 @@ FAIL_COUNT=0
 SKIP_COUNT=0
 TOTAL_COUNT=0
 
+# ---------- helpers ----------
 
 log_info()    { echo -e "${GREEN}[INFO]${NC}  $1"; }
 log_warn()    { echo -e "${YELLOW}[WARN]${NC}  $1"; }
@@ -98,6 +107,7 @@ assert_http() {
   assert_eq "$name (HTTP $expected_status)" "$expected_status" "$actual_status"
 }
 
+# HTTP helpers
 api_call() {
   local method="$1"
   local path="$2"
@@ -130,6 +140,7 @@ login() {
   json_field "$resp" '.data.access_token // .access_token // empty'
 }
 
+# ---------- wait for services ----------
 
 wait_for_gateway() {
   log_step "Waiting for API Gateway"
@@ -157,9 +168,14 @@ wait_for_mcp() {
   return 1
 }
 
+# ============================================================
+# SCENARIO 1: Create order + verify stock reservation
+# "Create an order for 10 units of ProductX"
+# ============================================================
 scenario_1_order_create_and_stock() {
   log_scenario "1: Create order and verify stock (order + inventory integration)"
 
+  # Login as operator (can create orders)
   local op_token
   op_token=$(login "$OPERATOR_EMAIL" "$OPERATOR_PASSWORD")
   if [ -z "$op_token" ]; then
@@ -172,6 +188,7 @@ scenario_1_order_create_and_stock() {
   admin_token=$(login "$ADMIN_EMAIL" "$ADMIN_PASSWORD")
   assert_not_empty "Admin login" "$admin_token"
 
+  # Get a product from inventory
   local products_resp
   products_resp=$(api_get "/api/v1/products?limit=1" "$admin_token")
   local product_name
@@ -180,6 +197,7 @@ scenario_1_order_create_and_stock() {
   product_id=$(json_field "$products_resp" '.data[0].id // empty')
   assert_not_empty "Product exists in inventory" "$product_name"
 
+  # Get initial stock for this product
   local stock_resp
   stock_resp=$(api_get "/api/v1/stock?product_id=$product_id&limit=1" "$admin_token")
   local initial_available
@@ -188,11 +206,12 @@ scenario_1_order_create_and_stock() {
   warehouse_id=$(json_field "$stock_resp" '.data[0].warehouse_id // empty')
   log_info "Initial stock for $product_name: available=$initial_available (warehouse=$warehouse_id)"
 
+  # Create order with items
   local create_resp
   create_resp=$(api_post "/api/v1/orders" "{
     \"customer_name\": \"E2E Test Customer\",
     \"customer_email\": \"e2e-test@example.com\",
-    \"shipping_address\": \"Test Street 1, Moscow\",
+    \"shipping_address\": \"Test St, 1, Kyiv\",
     \"items\": [
       {
         \"product_name\": \"$product_name\",
@@ -211,26 +230,31 @@ scenario_1_order_create_and_stock() {
   assert_not_empty "Order ID returned" "$order_id"
   if [ -z "$order_id" ] || [ "$order_id" = "null" ]; then return 1; fi
 
+  # Verify order status is pending
   local order_resp
   order_resp=$(api_get "/api/v1/orders/$order_id" "$op_token")
   local order_status
   order_status=$(json_field "$order_resp" '.data.status // empty')
   assert_eq "Order status is pending" "pending" "$order_status"
 
+  # Verify total_amount is computed correctly (5 * 99.99 = 499.95)
   local total
   total=$(json_field "$order_resp" '.data.total_amount // "0"')
   assert_eq "Order total_amount computed (5*99.99)" "499.95" "$total"
 
+  # Verify items are included
   local item_count
   item_count=$(json_field "$order_resp" '.data.items | length')
   assert_eq "Order has 1 item" "1" "$item_count"
 
+  # Verify order appears in list
   local list_resp
   list_resp=$(api_get "/api/v1/orders?status=pending" "$op_token")
   local list_status
   list_status=$(get_status "$list_resp")
   assert_http "List orders with status filter" "200" "$list_status"
 
+  # Search for the order by customer name
   local search_resp
   search_resp=$(api_get "/api/v1/orders/search?q=E2E%20Test" "$op_token")
   local search_status
@@ -244,6 +268,7 @@ scenario_1_order_create_and_stock() {
     assert_fail "Search found the order" "count=$search_count"
   fi
 
+  # Export order_id for later scenarios
   E2E_ORDER_ID="$order_id"
   E2E_OP_TOKEN="$op_token"
   E2E_ADMIN_TOKEN="$admin_token"
@@ -251,6 +276,9 @@ scenario_1_order_create_and_stock() {
   E2E_WAREHOUSE_ID="$warehouse_id"
 }
 
+# ============================================================
+# SCENARIO 2: Multi-step workflow — status transitions + shipment
+# ============================================================
 scenario_2_multistep_workflow() {
   log_scenario "2: Multi-step workflow (status transitions + logistics)"
 
@@ -262,19 +290,23 @@ scenario_2_multistep_workflow() {
   local token="${E2E_ADMIN_TOKEN}"
   local order_id="$E2E_ORDER_ID"
 
+  # Step 1: pending -> confirmed
   local resp
   resp=$(api_put "/api/v1/orders/$order_id/status" '{"status":"confirmed"}' "$token")
   local status
   status=$(get_status "$resp")
   assert_http "Transition pending -> confirmed" "200" "$status"
 
+  # Verify order status
   resp=$(api_get "/api/v1/orders/$order_id" "$token")
   local order_status
   order_status=$(json_field "$resp" '.data.status // empty')
   assert_eq "Order is confirmed" "confirmed" "$order_status"
 
+  # Wait briefly for NATS event to propagate (logistics auto-creates shipment on confirmed)
   sleep 2
 
+  # Check if logistics auto-created a shipment for this order
   resp=$(api_get "/api/v1/shipments?order_id=$order_id" "$token")
   local shipment_count
   shipment_count=$(json_field "$resp" '.data | length')
@@ -286,26 +318,32 @@ scenario_2_multistep_workflow() {
     E2E_SHIPMENT_ID=""
   fi
 
+  # Step 2: confirmed -> processing
   resp=$(api_put "/api/v1/orders/$order_id/status" '{"status":"processing"}' "$token")
   status=$(get_status "$resp")
   assert_http "Transition confirmed -> processing" "200" "$status"
 
+  # Step 3: processing -> shipped
   resp=$(api_put "/api/v1/orders/$order_id/status" '{"status":"shipped"}' "$token")
   status=$(get_status "$resp")
   assert_http "Transition processing -> shipped" "200" "$status"
 
+  # Step 4: shipped -> delivered
   resp=$(api_put "/api/v1/orders/$order_id/status" '{"status":"delivered"}' "$token")
   status=$(get_status "$resp")
   assert_http "Transition shipped -> delivered" "200" "$status"
 
+  # Step 5: delivered -> completed
   resp=$(api_put "/api/v1/orders/$order_id/status" '{"status":"completed"}' "$token")
   status=$(get_status "$resp")
   assert_http "Transition delivered -> completed" "200" "$status"
 
+  # Verify final status
   resp=$(api_get "/api/v1/orders/$order_id" "$token")
   order_status=$(json_field "$resp" '.data.status // empty')
   assert_eq "Order completed full workflow" "completed" "$order_status"
 
+  # Step 6: Invalid transition test — create another order and try invalid transition
   resp=$(api_post "/api/v1/orders" '{
     "customer_name": "E2E Invalid Transition",
     "customer_email": "invalid@test.com",
@@ -315,6 +353,7 @@ scenario_2_multistep_workflow() {
   local new_order_id
   new_order_id=$(json_field "$resp" '.data.id // empty')
   if [ -n "$new_order_id" ] && [ "$new_order_id" != "null" ]; then
+    # Try to skip directly to delivered (invalid: pending -> delivered)
     resp=$(api_put "/api/v1/orders/$new_order_id/status" '{"status":"delivered"}' "$token")
     status=$(get_status "$resp")
     if [ "$status" = "400" ] || [ "$status" = "422" ]; then
@@ -323,15 +362,18 @@ scenario_2_multistep_workflow() {
       assert_fail "Invalid transition pending->delivered rejected" "got HTTP $status"
     fi
 
+    # Test cancellation with reason
     resp=$(api_post "/api/v1/orders/$new_order_id/cancel" '{"reason":"E2E test cancellation"}' "$token")
     status=$(get_status "$resp")
     assert_http "Cancel order with reason" "200" "$status"
 
+    # Verify cancelled status
     resp=$(api_get "/api/v1/orders/$new_order_id" "$token")
     order_status=$(json_field "$resp" '.data.status // empty')
     assert_eq "Cancelled order has correct status" "cancelled" "$order_status"
   fi
 
+  # Step 7: Order stats
   resp=$(api_get "/api/v1/orders/stats" "$token")
   status=$(get_status "$resp")
   assert_http "Order stats endpoint" "200" "$status"
@@ -344,6 +386,9 @@ scenario_2_multistep_workflow() {
   fi
 }
 
+# ============================================================
+# SCENARIO 3: Analytics + low stock query
+# ============================================================
 scenario_3_analytics_and_low_stock() {
   log_scenario "3: Analytics queries and low stock monitoring"
 
@@ -352,32 +397,39 @@ scenario_3_analytics_and_low_stock() {
     token=$(login "$ADMIN_EMAIL" "$ADMIN_PASSWORD")
   fi
 
+  # Sales summary
   local resp
   resp=$(api_get "/api/v1/analytics/sales/summary?from=2020-01-01&to=2030-12-31" "$token")
   local status
   status=$(get_status "$resp")
   assert_http "Analytics sales summary" "200" "$status"
 
+  # Sales trends
   resp=$(api_get "/api/v1/analytics/sales/trends?from=2020-01-01&to=2030-12-31&granularity=day" "$token")
   status=$(get_status "$resp")
   assert_http "Analytics sales trends" "200" "$status"
 
+  # Inventory summary
   resp=$(api_get "/api/v1/analytics/inventory/summary" "$token")
   status=$(get_status "$resp")
   assert_http "Analytics inventory summary" "200" "$status"
 
+  # Logistics performance
   resp=$(api_get "/api/v1/analytics/logistics/performance?from=2020-01-01&to=2030-12-31" "$token")
   status=$(get_status "$resp")
   assert_http "Analytics logistics performance" "200" "$status"
 
+  # Anomalies
   resp=$(api_get "/api/v1/analytics/anomalies?from=2020-01-01&to=2030-12-31" "$token")
   status=$(get_status "$resp")
   assert_http "Analytics anomalies detection" "200" "$status"
 
+  # Optimization recommendations
   resp=$(api_get "/api/v1/analytics/optimization" "$token")
   status=$(get_status "$resp")
   assert_http "Analytics optimization recommendations" "200" "$status"
 
+  # Custom report generation
   resp=$(api_post "/api/v1/analytics/report" '{
     "report_type": "full",
     "from": "2020-01-01",
@@ -386,10 +438,12 @@ scenario_3_analytics_and_low_stock() {
   status=$(get_status "$resp")
   assert_http "Generate full analytics report" "200" "$status"
 
+  # Low stock items from inventory service
   resp=$(api_get "/api/v1/stock/low" "$token")
   status=$(get_status "$resp")
   assert_http "Low stock items endpoint" "200" "$status"
 
+  # Inventory report
   resp=$(api_get "/api/v1/inventory/report" "$token")
   status=$(get_status "$resp")
   assert_http "Inventory report" "200" "$status"
@@ -398,19 +452,25 @@ scenario_3_analytics_and_low_stock() {
   assert_contains "Inventory report has total data" "$body" "total"
 }
 
+# ============================================================
+# SCENARIO 4: RBAC enforcement
+# ============================================================
 scenario_4_rbac_enforcement() {
   log_scenario "4: RBAC enforcement (role-based access control)"
 
+  # -- Test 1: No token -> 401 --
   local resp
   resp=$(api_get "/api/v1/users/me")
   local status
   status=$(get_status "$resp")
   assert_http "No token returns 401" "401" "$status"
 
+  # -- Test 2: Invalid token -> 401 --
   resp=$(api_get "/api/v1/users/me" "invalid-jwt-token")
   status=$(get_status "$resp")
   assert_http "Invalid token returns 401" "401" "$status"
 
+  # -- Test 3: Operator cannot list users (admin-only) --
   local op_token
   op_token=$(login "$OPERATOR_EMAIL" "$OPERATOR_PASSWORD")
   if [ -z "$op_token" ]; then
@@ -422,10 +482,12 @@ scenario_4_rbac_enforcement() {
   status=$(get_status "$resp")
   assert_http "Operator cannot list users (admin-only)" "403" "$status"
 
+  # -- Test 4: Operator can list orders --
   resp=$(api_get "/api/v1/orders" "$op_token")
   status=$(get_status "$resp")
   assert_http "Operator can list orders" "200" "$status"
 
+  # -- Test 5: Operator can access own profile --
   resp=$(api_get "/api/v1/users/me" "$op_token")
   status=$(get_status "$resp")
   assert_http "Operator can access own profile" "200" "$status"
@@ -433,11 +495,14 @@ scenario_4_rbac_enforcement() {
   op_role=$(json_field "$resp" '.data.role // empty')
   assert_eq "Operator role is correct" "operator" "$op_role"
 
+  # -- Test 6: Operator cannot change own role --
   resp=$(api_put "/api/v1/users/me" '{"role":"admin"}' "$op_token")
+  # Re-check profile — role should still be operator
   resp=$(api_get "/api/v1/users/me" "$op_token")
   op_role=$(json_field "$resp" '.data.role // empty')
   assert_eq "Operator cannot escalate own role" "operator" "$op_role"
 
+  # -- Test 7: Warehouse manager can access products --
   local wh_token
   wh_token=$(login "$WAREHOUSE_EMAIL" "$WAREHOUSE_PASSWORD")
   if [ -n "$wh_token" ]; then
@@ -448,6 +513,7 @@ scenario_4_rbac_enforcement() {
     assert_skip "Warehouse manager tests" "cannot login"
   fi
 
+  # -- Test 8: Admin can access everything --
   local admin_token
   admin_token=$(login "$ADMIN_EMAIL" "$ADMIN_PASSWORD")
   resp=$(api_get "/api/v1/users" "$admin_token")
@@ -474,14 +540,17 @@ scenario_4_rbac_enforcement() {
   status=$(get_status "$resp")
   assert_http "Admin can list notifications" "200" "$status"
 
+  # -- Test 9: Password reset flow (mock email) --
   resp=$(api_post "/api/v1/auth/password-reset" "{\"email\":\"$OPERATOR_EMAIL\"}")
   status=$(get_status "$resp")
   assert_http "Password reset request accepted" "200" "$status"
 
+  # Password reset for nonexistent email — still 200 (no email enumeration)
   resp=$(api_post "/api/v1/auth/password-reset" '{"email":"nonexistent@test.com"}')
   status=$(get_status "$resp")
   assert_http "Password reset no email enumeration" "200" "$status"
 
+  # -- Test 10: Refresh token flow --
   local login_resp
   login_resp=$(api_post "/api/v1/auth/login" "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}")
   local refresh_token
@@ -498,6 +567,10 @@ scenario_4_rbac_enforcement() {
   fi
 }
 
+# ============================================================
+# SCENARIO 5: Full event chain
+# order -> inventory -> shipment -> analytics -> notification
+# ============================================================
 scenario_5_full_event_chain() {
   log_scenario "5: Full event chain (order -> inventory -> shipment -> analytics -> notification)"
 
@@ -506,17 +579,19 @@ scenario_5_full_event_chain() {
   assert_not_empty "Admin login for event chain" "$admin_token"
   if [ -z "$admin_token" ]; then return 1; fi
 
+  # Get unread notification count before
   local notif_resp
   notif_resp=$(api_get "/api/v1/notifications/unread-count" "$admin_token")
   local initial_unread
   initial_unread=$(json_field "$notif_resp" '.data.count // .count // 0')
   log_info "Initial unread notifications: $initial_unread"
 
+  # Step 1: Create an order
   local resp
   resp=$(api_post "/api/v1/orders" '{
     "customer_name": "E2E Event Chain Customer",
     "customer_email": "chain@test.com",
-    "shipping_address": "Event Chain Street 42, Moscow",
+    "shipping_address": "Chain St, 42, Kyiv",
     "items": [
       {"product_name":"Chain Widget A","quantity":3,"unit_price":50},
       {"product_name":"Chain Widget B","quantity":2,"unit_price":75}
@@ -527,20 +602,25 @@ scenario_5_full_event_chain() {
   assert_not_empty "Event chain order created" "$order_id"
   if [ -z "$order_id" ] || [ "$order_id" = "null" ]; then return 1; fi
 
+  # Verify total = 3*50 + 2*75 = 300
   local total
   total=$(json_field "$resp" '.data.total_amount // 0')
   assert_eq "Event chain order total (3*50+2*75)" "300" "$total"
 
+  # Step 2: Confirm order -> triggers NATS event -> logistics may auto-create shipment
   resp=$(api_put "/api/v1/orders/$order_id/status" '{"status":"confirmed"}' "$admin_token")
   assert_http "Confirm event chain order" "200" "$(get_status "$resp")"
 
+  # Wait for NATS events to propagate
   sleep 3
 
+  # Step 3: Check notifications were created (order.created and order.status_changed events)
   notif_resp=$(api_get "/api/v1/notifications?limit=20" "$admin_token")
   local notif_status
   notif_status=$(get_status "$notif_resp")
   assert_http "Notifications list after order events" "200" "$notif_status"
 
+  # Check for new unread notifications
   notif_resp=$(api_get "/api/v1/notifications/unread-count" "$admin_token")
   local final_unread
   final_unread=$(json_field "$notif_resp" '.data.count // .count // 0')
@@ -551,6 +631,7 @@ scenario_5_full_event_chain() {
     assert_skip "Notification count increased" "NATS events may not have reached notification-service"
   fi
 
+  # Step 4: Check auto-created shipment
   resp=$(api_get "/api/v1/shipments?order_id=$order_id" "$admin_token")
   local shipment_count
   shipment_count=$(json_field "$resp" '.data | length')
@@ -559,6 +640,7 @@ scenario_5_full_event_chain() {
     local shipment_id
     shipment_id=$(json_field "$resp" '.data[0].id // empty')
 
+    # Update shipment status: created -> picked_up -> in_transit -> delivered
     if [ -n "$shipment_id" ] && [ "$shipment_id" != "null" ]; then
       resp=$(api_put "/api/v1/shipments/$shipment_id/status" '{"status":"picked_up"}' "$admin_token")
       assert_http "Shipment picked_up" "200" "$(get_status "$resp")"
@@ -573,6 +655,7 @@ scenario_5_full_event_chain() {
     assert_skip "Shipment auto-created" "NATS event may not have propagated"
   fi
 
+  # Step 5: Verify stock movements exist (from seed data adjustments)
   resp=$(api_get "/api/v1/stock/movements?limit=5" "$admin_token")
   assert_http "Stock movements exist" "200" "$(get_status "$resp")"
   local movements_count
@@ -583,9 +666,11 @@ scenario_5_full_event_chain() {
     assert_skip "Stock movements recorded" "no movements in response"
   fi
 
+  # Step 6: Verify analytics health
   resp=$(api_get "/api/v1/analytics/health" "$admin_token")
   assert_http "Analytics service healthy" "200" "$(get_status "$resp")"
 
+  # Step 7: Mark a notification as read
   notif_resp=$(api_get "/api/v1/notifications?limit=1" "$admin_token")
   local notif_id
   notif_id=$(json_field "$notif_resp" '.data[0].id // empty')
@@ -602,12 +687,14 @@ scenario_5_full_event_chain() {
     assert_skip "Mark notification as read" "no notifications to mark"
   fi
 
+  # Step 8: Logistics performance check
   resp=$(api_get "/api/v1/logistics/performance" "$admin_token")
   assert_http "Logistics performance endpoint" "200" "$(get_status "$resp")"
   local body
   body=$(get_body "$resp")
   assert_contains "Performance has total_delivered" "$body" "total_delivered"
 
+  # Step 9: Carriers exist
   resp=$(api_get "/api/v1/carriers" "$admin_token")
   assert_http "Carriers list" "200" "$(get_status "$resp")"
   local carrier_count
@@ -618,9 +705,10 @@ scenario_5_full_event_chain() {
     assert_fail "Carriers exist" "count=$carrier_count"
   fi
 
+  # Step 10: Route calculation
   resp=$(api_post "/api/v1/routes/calculate" '{
-    "origin": "Moscow",
-    "destination": "Saint Petersburg",
+    "origin": "Kyiv",
+    "destination": "Lviv",
     "carrier_id": ""
   }' "$admin_token")
   local route_status
@@ -637,9 +725,13 @@ scenario_5_full_event_chain() {
   fi
 }
 
+# ============================================================
+# SCENARIO 6 (bonus): WebSocket MCP chat connectivity
+# ============================================================
 scenario_6_mcp_chat() {
   log_scenario "6 (bonus): MCP Host connectivity and plans"
 
+  # Check MCP health
   local resp
   resp=$(curl -sf "${MCP_URL}/health" 2>/dev/null || echo '{"status":"unavailable"}')
   assert_contains "MCP host health check" "$resp" "status"
@@ -653,6 +745,7 @@ scenario_6_mcp_chat() {
     return 0
   fi
 
+  # Check Redis status
   local redis_status
   redis_status=$(echo "$resp" | jq -r '.redis // "unknown"')
   if [ "$redis_status" = "ok" ]; then
@@ -661,6 +754,7 @@ scenario_6_mcp_chat() {
     assert_skip "MCP Redis connection" "status=$redis_status"
   fi
 
+  # Check plan endpoints (should return empty list for non-existent session)
   local admin_token
   admin_token=$(login "$ADMIN_EMAIL" "$ADMIN_PASSWORD")
   resp=$(curl -sf "${MCP_URL}/api/v1/mcp/plans/nonexistent-session" 2>/dev/null || echo "")
@@ -671,6 +765,9 @@ scenario_6_mcp_chat() {
   fi
 }
 
+# ============================================================
+# MAIN
+# ============================================================
 main() {
   echo -e "${CYAN}"
   echo "============================================================"
@@ -687,6 +784,7 @@ main() {
     mcp_available=true
   fi
 
+  # Run all scenarios
   scenario_1_order_create_and_stock
   scenario_2_multistep_workflow
   scenario_3_analytics_and_low_stock
@@ -699,6 +797,7 @@ main() {
     log_warn "Skipping MCP chat scenarios (MCP host not available)"
   fi
 
+  # Summary
   echo ""
   echo -e "${CYAN}============================================================${NC}"
   echo -e "${CYAN}  TEST SUMMARY${NC}"

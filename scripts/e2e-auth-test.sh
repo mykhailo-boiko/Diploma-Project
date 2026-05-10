@@ -1,18 +1,25 @@
 #!/usr/bin/env bash
+# ============================================================
+# ChainOrchestra — Auth Integration E2E Test Suite (TASK-037)
+# Tests full login -> gateway -> services flow with RBAC.
+# Requires: running docker compose stack + seed data
+# Usage: ./scripts/e2e-auth-test.sh
+# ============================================================
 set -uo pipefail
 
 GATEWAY_URL="${GATEWAY_URL:-http://localhost:8080}"
 ADMIN_EMAIL="${ADMIN_EMAIL:-admin@chainorchestra.local}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin123}"
-OPERATOR_EMAIL="ivan.petrov@chainorchestra.local"
+OPERATOR_EMAIL="ivan.petrenko@chainorchestra.local"
 OPERATOR_PASSWORD="Operator1!"
-WAREHOUSE_EMAIL="maria.kuznetsova@chainorchestra.local"
+WAREHOUSE_EMAIL="maria.kovalenko@chainorchestra.local"
 WAREHOUSE_PASSWORD="Warehouse1!"
-LOGISTICS_EMAIL="alexei.volkov@chainorchestra.local"
+LOGISTICS_EMAIL="oleksii.shevchenko@chainorchestra.local"
 LOGISTICS_PASSWORD="Logistics1!"
-ANALYST_EMAIL="elena.sokolova@chainorchestra.local"
+ANALYST_EMAIL="olena.bondarenko@chainorchestra.local"
 ANALYST_PASSWORD="Analyst1!"
 
+# Colors
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
@@ -25,6 +32,7 @@ FAIL_COUNT=0
 SKIP_COUNT=0
 TOTAL_COUNT=0
 
+# ---------- helpers ----------
 
 log_info()    { echo -e "${GREEN}[INFO]${NC}  $1"; }
 log_warn()    { echo -e "${YELLOW}[WARN]${NC}  $1"; }
@@ -97,6 +105,7 @@ assert_http() {
   assert_eq "$name (HTTP $expected_status)" "$expected_status" "$actual_status"
 }
 
+# HTTP helpers
 api_call() {
   local method="$1"
   local path="$2"
@@ -135,6 +144,9 @@ login_full() {
   api_post "/api/v1/auth/login" "{\"email\":\"$email\",\"password\":\"$password\"}"
 }
 
+# ============================================================
+# Wait for gateway
+# ============================================================
 log_step "Waiting for API Gateway"
 for i in $(seq 1 30); do
   if curl -sf "${GATEWAY_URL}/health" > /dev/null 2>&1; then
@@ -148,9 +160,13 @@ for i in $(seq 1 30); do
   sleep 1
 done
 
+# ============================================================
+# SCENARIO 1: Login via gateway -> JWT with user_id, email, role
+# ============================================================
 scenario_1_login_jwt() {
   log_scenario "1: Login via gateway -> JWT with claims"
 
+  # Step 1: Login as admin through gateway
   local resp
   resp=$(login_full "$ADMIN_EMAIL" "$ADMIN_PASSWORD")
   local status
@@ -165,6 +181,7 @@ scenario_1_login_jwt() {
   refresh_token=$(json_field "$resp" '.data.refresh_token // empty')
   assert_not_empty "Refresh token returned" "$refresh_token"
 
+  # Step 2: Decode JWT and verify claims (user_id, email, role)
   local payload
   payload=$(echo "$access_token" | cut -d. -f2 | base64 -d 2>/dev/null || echo "$access_token" | cut -d. -f2 | base64 -D 2>/dev/null || echo "")
   if [ -n "$payload" ]; then
@@ -183,6 +200,7 @@ scenario_1_login_jwt() {
     assert_skip "JWT decode" "base64 decode failed on this platform"
   fi
 
+  # Step 3: Login as each role and verify JWT claims
   for role_info in "operator:$OPERATOR_EMAIL:$OPERATOR_PASSWORD" \
                    "warehouse_manager:$WAREHOUSE_EMAIL:$WAREHOUSE_PASSWORD" \
                    "logistics_manager:$LOGISTICS_EMAIL:$LOGISTICS_PASSWORD" \
@@ -197,6 +215,7 @@ scenario_1_login_jwt() {
     assert_http "Login as $role" "200" "$status"
   done
 
+  # Step 4: Login with invalid credentials -> 401
   resp=$(login_full "$ADMIN_EMAIL" "wrong_password")
   status=$(get_status "$resp")
   assert_http "Invalid password returns 401" "401" "$status"
@@ -206,6 +225,9 @@ scenario_1_login_jwt() {
   assert_http "Unknown email returns 401" "401" "$status"
 }
 
+# ============================================================
+# SCENARIO 2: Gateway proxies with X-User-ID, X-User-Role headers
+# ============================================================
 scenario_2_gateway_headers() {
   log_scenario "2: Gateway proxies requests with X-User-* headers"
 
@@ -214,6 +236,7 @@ scenario_2_gateway_headers() {
   assert_not_empty "Admin login for header test" "$admin_token"
   if [ -z "$admin_token" ]; then return 1; fi
 
+  # Step 1: GET /api/v1/users/me should return current user (proves X-User-ID was forwarded)
   local resp
   resp=$(api_get "/api/v1/users/me" "$admin_token")
   local status
@@ -228,10 +251,12 @@ scenario_2_gateway_headers() {
   profile_role=$(json_field "$resp" '.data.role // empty')
   assert_eq "Profile returns correct role" "admin" "$profile_role"
 
+  # Step 2: GET /api/v1/users (admin-only) proves X-User-Role forwarded
   resp=$(api_get "/api/v1/users?limit=10" "$admin_token")
   status=$(get_status "$resp")
   assert_http "Admin list users (X-User-Role=admin forwarded)" "200" "$status"
 
+  # Step 3: Verify each service responds through gateway
   resp=$(api_get "/api/v1/orders?limit=1" "$admin_token")
   status=$(get_status "$resp")
   assert_http "Orders via gateway" "200" "$status"
@@ -253,18 +278,24 @@ scenario_2_gateway_headers() {
   assert_http "Notifications via gateway" "200" "$status"
 }
 
+# ============================================================
+# SCENARIO 3: RBAC enforcement across all services
+# ============================================================
 scenario_3_rbac_enforcement() {
   log_scenario "3: RBAC enforcement (role-based access per service)"
 
+  # -- No token -> 401 --
   local resp status
   resp=$(api_get "/api/v1/users/me")
   status=$(get_status "$resp")
   assert_http "No token -> 401" "401" "$status"
 
+  # -- Invalid token -> 401 --
   resp=$(api_get "/api/v1/users/me" "invalid-jwt-token-xyz")
   status=$(get_status "$resp")
   assert_http "Invalid token -> 401" "401" "$status"
 
+  # -- Operator: can access orders, notifications; cannot access users, inventory --
   local op_token
   op_token=$(login "$OPERATOR_EMAIL" "$OPERATOR_PASSWORD")
   if [ -z "$op_token" ]; then
@@ -288,11 +319,13 @@ scenario_3_rbac_enforcement() {
   status=$(get_status "$resp")
   assert_http "Operator CANNOT list users (admin-only)" "403" "$status"
 
+  # -- Operator cannot escalate own role --
   resp=$(api_put "/api/v1/users/me" '{"role":"admin"}' "$op_token")
   resp=$(api_get "/api/v1/users/me" "$op_token")
   op_role=$(json_field "$resp" '.data.role // empty')
   assert_eq "Operator cannot escalate role" "operator" "$op_role"
 
+  # -- Warehouse manager: can access products/stock/warehouses --
   local wh_token
   wh_token=$(login "$WAREHOUSE_EMAIL" "$WAREHOUSE_PASSWORD")
   if [ -n "$wh_token" ]; then
@@ -315,6 +348,7 @@ scenario_3_rbac_enforcement() {
     assert_skip "Warehouse manager RBAC" "cannot login"
   fi
 
+  # -- Logistics manager: can access shipments/carriers --
   local log_token
   log_token=$(login "$LOGISTICS_EMAIL" "$LOGISTICS_PASSWORD")
   if [ -n "$log_token" ]; then
@@ -333,6 +367,7 @@ scenario_3_rbac_enforcement() {
     assert_skip "Logistics manager RBAC" "cannot login"
   fi
 
+  # -- Analyst: can access analytics --
   local an_token
   an_token=$(login "$ANALYST_EMAIL" "$ANALYST_PASSWORD")
   if [ -n "$an_token" ]; then
@@ -347,6 +382,7 @@ scenario_3_rbac_enforcement() {
     assert_skip "Analyst RBAC" "cannot login"
   fi
 
+  # -- Admin: can access everything --
   local admin_token
   admin_token=$(login "$ADMIN_EMAIL" "$ADMIN_PASSWORD")
   resp=$(api_get "/api/v1/users?limit=1" "$admin_token")
@@ -374,6 +410,9 @@ scenario_3_rbac_enforcement() {
   assert_http "Admin can list notifications" "200" "$status"
 }
 
+# ============================================================
+# SCENARIO 4: Refresh token flow
+# ============================================================
 scenario_4_refresh_token() {
   log_scenario "4: Refresh token flow"
 
@@ -391,6 +430,7 @@ scenario_4_refresh_token() {
     return 1
   fi
 
+  # Step 1: Use refresh token to get new access token
   resp=$(api_post "/api/v1/auth/refresh" "{\"refresh_token\":\"$refresh_token\"}")
   status=$(get_status "$resp")
   assert_http "Refresh token -> new access token" "200" "$status"
@@ -403,6 +443,7 @@ scenario_4_refresh_token() {
   new_refresh=$(json_field "$resp" '.data.refresh_token // empty')
   assert_not_empty "New refresh token returned" "$new_refresh"
 
+  # Step 2: Verify new access token works
   resp=$(api_get "/api/v1/users/me" "$new_access")
   status=$(get_status "$resp")
   assert_http "New access token works for profile" "200" "$status"
@@ -411,6 +452,7 @@ scenario_4_refresh_token() {
   profile_email=$(json_field "$resp" '.data.email // empty')
   assert_eq "Profile email with new token" "$ADMIN_EMAIL" "$profile_email"
 
+  # Step 3: Use new access token on other services
   resp=$(api_get "/api/v1/orders?limit=1" "$new_access")
   status=$(get_status "$resp")
   assert_http "New token works for orders" "200" "$status"
@@ -419,6 +461,7 @@ scenario_4_refresh_token() {
   status=$(get_status "$resp")
   assert_http "New token works for products" "200" "$status"
 
+  # Step 4: Invalid refresh token -> error
   resp=$(api_post "/api/v1/auth/refresh" '{"refresh_token":"invalid-token-xyz"}')
   status=$(get_status "$resp")
   if [ "$status" = "401" ] || [ "$status" = "400" ]; then
@@ -428,9 +471,13 @@ scenario_4_refresh_token() {
   fi
 }
 
+# ============================================================
+# SCENARIO 5: Expired/invalid token -> 401
+# ============================================================
 scenario_5_expired_token() {
   log_scenario "5: Expired/invalid token handling"
 
+  # Craft an obviously expired JWT (just random base64 — gateway should reject)
   local fake_jwt="eyJhbGciOiJIUzI1NiJ9.eyJleHAiOjEwMDAwMDAwMDB9.invalid-sig"
   local resp status
 
@@ -438,46 +485,59 @@ scenario_5_expired_token() {
   status=$(get_status "$resp")
   assert_http "Expired/invalid JWT -> 401" "401" "$status"
 
+  # Empty bearer
   resp=$(api_get "/api/v1/orders" "")
   status=$(get_status "$resp")
   assert_http "Empty token -> 401" "401" "$status"
 
+  # Malformed token
   resp=$(api_get "/api/v1/products" "not.a.jwt")
   status=$(get_status "$resp")
   assert_http "Malformed token -> 401" "401" "$status"
 }
 
+# ============================================================
+# SCENARIO 6: Password reset flow
+# ============================================================
 scenario_6_password_reset() {
   log_scenario "6: Password reset flow"
 
   local resp status
 
+  # Request password reset (should always return 200 — no email enumeration)
   resp=$(api_post "/api/v1/auth/password-reset" "{\"email\":\"$OPERATOR_EMAIL\"}")
   status=$(get_status "$resp")
   assert_http "Password reset request accepted" "200" "$status"
 
+  # Non-existent email — still 200
   resp=$(api_post "/api/v1/auth/password-reset" '{"email":"nonexistent@test.com"}')
   status=$(get_status "$resp")
   assert_http "Password reset no email enumeration" "200" "$status"
 
+  # Confirm with invalid token
   resp=$(api_post "/api/v1/auth/password-reset/confirm" '{"token":"invalid","new_password":"new123"}')
   status=$(get_status "$resp")
   assert_http "Invalid reset token rejected" "400" "$status"
 }
 
+# ============================================================
+# SCENARIO 7: Full chain — Frontend -> Gateway -> Service -> Response
+# ============================================================
 scenario_7_full_chain() {
   log_scenario "7: Full chain (login -> gateway -> multiple services)"
 
+  # Login as admin
   local admin_token
   admin_token=$(login "$ADMIN_EMAIL" "$ADMIN_PASSWORD")
   assert_not_empty "Full chain: admin login" "$admin_token"
   if [ -z "$admin_token" ]; then return 1; fi
 
+  # Create an order through gateway
   local resp status
   resp=$(api_post "/api/v1/orders" '{
     "customer_name": "Auth E2E Customer",
     "customer_email": "auth-e2e@test.com",
-    "shipping_address": "Auth Test Street 1, Moscow",
+    "shipping_address": "Test St, 1, Kyiv",
     "items": [
       {"product_name":"Auth Widget","quantity":5,"unit_price":100}
     ]
@@ -489,6 +549,7 @@ scenario_7_full_chain() {
   order_id=$(json_field "$resp" '.data.id // empty')
   assert_not_empty "Order created with ID" "$order_id"
 
+  # Verify order is retrievable
   if [ -n "$order_id" ] && [ "$order_id" != "null" ]; then
     resp=$(api_get "/api/v1/orders/$order_id" "$admin_token")
     status=$(get_status "$resp")
@@ -499,6 +560,7 @@ scenario_7_full_chain() {
     assert_eq "Order customer matches" "Auth E2E Customer" "$customer"
   fi
 
+  # Create notification through gateway (admin-only)
   resp=$(api_post "/api/v1/notifications" '{
     "user_id": "'"$(json_field "$(api_get "/api/v1/users/me" "$admin_token")" '.data.id // empty')"'",
     "type": "system",
@@ -508,6 +570,7 @@ scenario_7_full_chain() {
   status=$(get_status "$resp")
   assert_http "Create notification (admin)" "201" "$status"
 
+  # Verify unread count
   resp=$(api_get "/api/v1/notifications/unread-count" "$admin_token")
   status=$(get_status "$resp")
   assert_http "Unread count via full chain" "200" "$status"
@@ -520,6 +583,7 @@ scenario_7_full_chain() {
     assert_fail "Unread count >= 1" "got: $count"
   fi
 
+  # Verify operator sees the same order but cannot create notifications
   local op_token
   op_token=$(login "$OPERATOR_EMAIL" "$OPERATOR_PASSWORD")
   if [ -n "$op_token" ] && [ -n "$order_id" ] && [ "$order_id" != "null" ]; then
@@ -535,6 +599,9 @@ scenario_7_full_chain() {
   fi
 }
 
+# ============================================================
+# Run all scenarios
+# ============================================================
 log_step "ChainOrchestra Auth Integration E2E Tests (TASK-037)"
 echo ""
 
@@ -546,6 +613,9 @@ scenario_5_expired_token
 scenario_6_password_reset
 scenario_7_full_chain
 
+# ============================================================
+# Summary
+# ============================================================
 echo ""
 log_step "Results"
 echo -e "  Total:   $TOTAL_COUNT"

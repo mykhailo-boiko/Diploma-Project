@@ -26,9 +26,10 @@ MCP_HTTP_URL = os.getenv("MCP_HTTP_URL", "http://localhost:8090")
 
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "admin@chainorchestra.local")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
-OPERATOR_EMAIL = "ivan.petrov@chainorchestra.local"
+OPERATOR_EMAIL = "ivan.petrenko@chainorchestra.local"
 OPERATOR_PASSWORD = "Operator1!"
 
+# Colors
 GREEN = "\033[0;32m"
 RED = "\033[0;31m"
 YELLOW = "\033[1;33m"
@@ -106,6 +107,7 @@ async def test_ws_connection(token: str) -> bool:
     ws_url = f"{MCP_WS_URL}/ws/chat?token={token}"
     try:
         async with websockets.connect(ws_url, open_timeout=10) as ws:
+            # Should receive a system message on connect
             msg = await asyncio.wait_for(ws.recv(), timeout=10)
             data = json.loads(msg)
             if data.get("type") == "system":
@@ -133,7 +135,9 @@ async def test_ws_invalid_token() -> None:
     ws_url = f"{MCP_WS_URL}/ws/chat?token=invalid-jwt"
     try:
         async with websockets.connect(ws_url, open_timeout=5) as ws:
+            # Should be closed immediately
             msg = await asyncio.wait_for(ws.recv(), timeout=5)
+            # If we get a message, check if it's an error
             data = json.loads(msg)
             if data.get("type") == "error":
                 assert_pass("WebSocket rejects invalid token with error message")
@@ -147,6 +151,7 @@ async def test_ws_invalid_token() -> None:
     except (ConnectionRefusedError, OSError):
         assert_skip("WebSocket invalid token", "MCP host not accessible")
     except Exception as exc:
+        # Any connection failure = token rejected
         assert_pass(f"WebSocket rejects invalid token ({type(exc).__name__})")
 
 
@@ -186,13 +191,16 @@ async def test_chat_message(token: str, message: str, test_name: str, timeout: i
     ws_url = f"{MCP_WS_URL}/ws/chat?token={token}"
     try:
         async with websockets.connect(ws_url, open_timeout=10) as ws:
+            # Wait for system message
             try:
                 await asyncio.wait_for(ws.recv(), timeout=10)
             except asyncio.TimeoutError:
                 pass
 
+            # Send message
             await ws.send(json.dumps({"message": message}))
 
+            # Collect responses until we get the final message
             final_text = ""
             tool_calls = []
             start = time.time()
@@ -217,6 +225,7 @@ async def test_chat_message(token: str, message: str, test_name: str, timeout: i
                         final_text = f"ERROR: {data.get('content', '')}"
                         break
                     elif msg_type == "stream":
+                        # Accumulate streaming text
                         final_text += data.get("content", "")
                 except asyncio.TimeoutError:
                     break
@@ -240,12 +249,14 @@ async def scenario_chat_basic(admin_token: str) -> None:
     """Test basic MCP chat functionality."""
     print(f"\n{CYAN}>>> SCENARIO: MCP Chat Basic Functionality <<<{NC}")
 
+    # Test 1: Simple query — list orders
     await test_chat_message(
         admin_token,
         "List all orders",
         "Chat: list orders via MCP tools",
     )
 
+    # Test 2: Query requiring analytics
     await test_chat_message(
         admin_token,
         "What are the low stock items?",
@@ -276,6 +287,7 @@ async def scenario_chat_rbac(operator_token: str) -> None:
     )
     if response:
         lower = response.lower()
+        # The LLM should indicate the capability is not available or restricted
         if any(kw in lower for kw in ["not available", "don't have", "cannot", "restricted", "permission", "not authorized", "access"]):
             assert_pass("RBAC: operator correctly denied inventory access in chat")
         else:
@@ -289,6 +301,7 @@ async def run_ws_tests() -> None:
     print(f"{CYAN}  MCP: {MCP_WS_URL}{NC}")
     print(f"{CYAN}{'=' * 60}{NC}")
 
+    # Check MCP health first
     health = check_mcp_health()
     if health.get("status") == "unavailable":
         print(f"\n{YELLOW}MCP Host is not available. Skipping all WebSocket tests.{NC}")
@@ -298,6 +311,7 @@ async def run_ws_tests() -> None:
     tools = health.get("tools", 0)
     print(f"\n  MCP Host status: {health.get('status')}, tools: {tools}, redis: {health.get('redis')}")
 
+    # Login
     admin_token = login(ADMIN_EMAIL, ADMIN_PASSWORD)
     if not admin_token:
         assert_fail("Admin login for WebSocket tests")
@@ -306,6 +320,7 @@ async def run_ws_tests() -> None:
 
     operator_token = login(OPERATOR_EMAIL, OPERATOR_PASSWORD)
 
+    # Auth tests
     print(f"\n{CYAN}>>> SCENARIO: WebSocket Authentication <<<{NC}")
     await test_ws_invalid_token()
     await test_ws_no_token()
@@ -314,6 +329,7 @@ async def run_ws_tests() -> None:
         print(f"\n{YELLOW}Cannot establish WebSocket connection. Skipping chat tests.{NC}")
         return
 
+    # Chat tests (require Gemini API key)
     gemini_available = bool(os.getenv("GEMINI_API_KEY"))
     if not gemini_available:
         assert_skip("MCP chat scenarios", "GEMINI_API_KEY not set — LLM-dependent tests skipped")

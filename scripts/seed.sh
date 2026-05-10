@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
+# ============================================
+# ChainOrchestra — Seed Data Script
+# Populates the system with realistic test data
+# Idempotent: safe to run multiple times
+# ============================================
 set -euo pipefail
 
 GATEWAY_URL="${GATEWAY_URL:-http://localhost:8080}"
 ADMIN_EMAIL="${ADMIN_EMAIL:-admin@chainorchestra.local}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin123}"
 
+# Colors for output
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
@@ -16,6 +22,7 @@ log_warn()  { echo -e "${YELLOW}[WARN]${NC}  $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 log_step()  { echo -e "\n${BLUE}=== $1 ===${NC}"; }
 
+# ---------- helpers ----------
 
 api_post() {
   local path="$1"
@@ -49,6 +56,7 @@ api_put() {
   curl "${headers[@]}" -X PUT "${GATEWAY_URL}${path}" -d "$data"
 }
 
+# Parse response: last line is HTTP status code, rest is body
 parse_response() {
   local response="$1"
   local body
@@ -64,10 +72,12 @@ get_status() {
   echo "$response" | tail -1
 }
 
+# Extract field from JSON (simple jq wrapper)
 json_field() {
   echo "$1" | sed '$d' | jq -r "$2"
 }
 
+# ---------- wait for gateway ----------
 
 wait_for_gateway() {
   log_step "Waiting for API Gateway"
@@ -86,6 +96,7 @@ wait_for_gateway() {
   exit 1
 }
 
+# ---------- authenticate ----------
 
 admin_login() {
   log_step "Authenticating as admin"
@@ -102,6 +113,7 @@ admin_login() {
   log_info "Admin authenticated (token: ${ADMIN_TOKEN:0:20}...)"
 }
 
+# ---------- 1. Users ----------
 
 declare -A USER_TOKENS
 declare -A USER_IDS
@@ -110,17 +122,17 @@ create_users() {
   log_step "Creating Users (5 users, one per role)"
 
   local users=(
-    '{"email":"ivan.petrov@chainorchestra.local","password":"Operator1!","first_name":"Ivan","last_name":"Petrov","role":"operator"}'
-    '{"email":"maria.kuznetsova@chainorchestra.local","password":"Warehouse1!","first_name":"Maria","last_name":"Kuznetsova","role":"warehouse_manager"}'
-    '{"email":"alexei.volkov@chainorchestra.local","password":"Logistics1!","first_name":"Alexei","last_name":"Volkov","role":"logistics_manager"}'
-    '{"email":"elena.sokolova@chainorchestra.local","password":"Analyst1!","first_name":"Elena","last_name":"Sokolova","role":"analyst"}'
+    '{"email":"ivan.petrenko@chainorchestra.local","password":"wLh#O!+BMK^82qzrU#r2","first_name":"Ivan","last_name":"Petrenko","role":"operator"}'
+    '{"email":"maria.kovalenko@chainorchestra.local","password":"+5=SB8#Yd0QYHlIJnAcU","first_name":"Mariia","last_name":"Kovalenko","role":"warehouse_manager"}'
+    '{"email":"oleksii.shevchenko@chainorchestra.local","password":"F4EJ%%88TO4e1IqdbD4S","first_name":"Oleksii","last_name":"Shevchenko","role":"logistics_manager"}'
+    '{"email":"olena.bondarenko@chainorchestra.local","password":"#1nVWLCi4x3H*C4SOkL4","first_name":"Olena","last_name":"Bondarenko","role":"analyst"}'
   )
 
   local emails=(
-    "ivan.petrov@chainorchestra.local"
-    "maria.kuznetsova@chainorchestra.local"
-    "alexei.volkov@chainorchestra.local"
-    "elena.sokolova@chainorchestra.local"
+    "ivan.petrenko@chainorchestra.local"
+    "maria.kovalenko@chainorchestra.local"
+    "oleksii.shevchenko@chainorchestra.local"
+    "olena.bondarenko@chainorchestra.local"
   )
 
   local roles=(operator warehouse_manager logistics_manager analyst)
@@ -142,10 +154,11 @@ create_users() {
     fi
   done
 
+  # Login as each user to get tokens and IDs
   log_info "Logging in as each user to get tokens..."
 
   local all_emails=("$ADMIN_EMAIL" "${emails[@]}")
-  local all_passwords=("$ADMIN_PASSWORD" "Operator1!" "Warehouse1!" "Logistics1!" "Analyst1!")
+  local all_passwords=("$ADMIN_PASSWORD" "wLh#O!+BMK^82qzrU#r2" "+5=SB8#Yd0QYHlIJnAcU" "F4EJ%%88TO4e1IqdbD4S" "#1nVWLCi4x3H*C4SOkL4")
   local all_roles=("admin" "${roles[@]}")
 
   for i in "${!all_emails[@]}"; do
@@ -161,6 +174,7 @@ create_users() {
       token=$(json_field "$response" '.data.access_token')
       USER_TOKENS["$role"]="$token"
 
+      # Get user ID from /users/me
       local me_response
       me_response=$(api_get "/api/v1/users/me" "$token")
       local user_id
@@ -173,6 +187,7 @@ create_users() {
   done
 }
 
+# ---------- 2. Products ----------
 
 declare -a PRODUCT_IDS=()
 
@@ -216,6 +231,7 @@ create_products() {
       log_info "Created product: $sku — ID: ${product_id:0:8}..."
     elif [ "$status" = "409" ] || [ "$status" = "400" ]; then
       log_warn "Product $sku already exists, fetching ID..."
+      # Fetch existing product by listing with SKU filter
       local list_response
       list_response=$(api_get "/api/v1/products?sku=${sku}&limit=1" "$ADMIN_TOKEN")
       local existing_id
@@ -235,6 +251,7 @@ create_products() {
   log_info "Total products tracked: ${#PRODUCT_IDS[@]}"
 }
 
+# ---------- 3. Warehouses ----------
 
 declare -a WAREHOUSE_IDS=()
 
@@ -242,12 +259,12 @@ create_warehouses() {
   log_step "Creating Warehouses (3 warehouses)"
 
   local warehouses=(
-    '{"name":"Moscow Central Warehouse","address":"123 Tverskaya St, Moscow, Russia 125009"}'
-    '{"name":"Saint Petersburg Distribution Center","address":"45 Nevsky Prospekt, Saint Petersburg, Russia 191186"}'
-    '{"name":"Novosibirsk Regional Hub","address":"78 Krasny Prospekt, Novosibirsk, Russia 630099"}'
+    '{"name":"Kyiv Central Warehouse","address":"Khreshchatyk St, 22, Kyiv, Ukraine 01001"}'
+    '{"name":"Lviv Distribution Center","address":"Svobody Ave, 45, Lviv, Ukraine 79000"}'
+    '{"name":"Odesa Regional Hub","address":"Derybasivska St, 12, Odesa, Ukraine 65000"}'
   )
 
-  local names=("Moscow Central Warehouse" "Saint Petersburg Distribution Center" "Novosibirsk Regional Hub")
+  local names=("Kyiv Central Warehouse" "Lviv Distribution Center" "Odesa Regional Hub")
 
   for i in "${!warehouses[@]}"; do
     local name="${names[$i]}"
@@ -279,18 +296,21 @@ create_warehouses() {
   log_info "Total warehouses tracked: ${#WAREHOUSE_IDS[@]}"
 }
 
+# ---------- 4. Stock (inbound adjustments) ----------
 
 setup_stock() {
   log_step "Setting up Stock (inbound adjustments for all products at all warehouses)"
 
-  if [ ${
+  if [ ${#PRODUCT_IDS[@]} -eq 0 ] || [ ${#WAREHOUSE_IDS[@]} -eq 0 ]; then
     log_error "No products or warehouses — cannot set up stock"
     return 1
   fi
 
+  # Quantities per product (varied for realism)
   local quantities=(200 150 100 300 80 60 120 90 250 400 350 180 500 450 600 300 160 140 110 220)
   local thresholds=(30 25 15 50 10 8 20 15 40 60 50 25 80 70 100 50 25 20 15 35)
 
+  # Check if stock is already populated (idempotency)
   local existing_stock
   existing_stock=$(api_get "/api/v1/stock?limit=1" "$ADMIN_TOKEN")
   local existing_count
@@ -298,6 +318,7 @@ setup_stock() {
   if [ "$existing_count" -gt 0 ]; then
     log_warn "Stock already populated ($existing_count entries), skipping adjustments"
     log_info "  (To re-seed stock, clear the stock table first)"
+    # Still set thresholds (idempotent PUT)
     for wi in "${!WAREHOUSE_IDS[@]}"; do
       local wh_id="${WAREHOUSE_IDS[$wi]}"
       for pi in "${!PRODUCT_IDS[@]}"; do
@@ -315,6 +336,7 @@ setup_stock() {
     local wh_id="${WAREHOUSE_IDS[$wi]}"
     for pi in "${!PRODUCT_IDS[@]}"; do
       local prod_id="${PRODUCT_IDS[$pi]}"
+      # Vary quantity by warehouse (60%, 100%, 80% of base)
       local base_qty="${quantities[$pi]}"
       local multipliers=(60 100 80)
       local qty=$(( base_qty * multipliers[wi] / 100 ))
@@ -326,11 +348,12 @@ setup_stock() {
       local status
       status=$(get_status "$response")
       if [ "$status" = "200" ] || [ "$status" = "201" ]; then
-        :
+        : # success, silent
       else
         log_warn "Stock adjust failed for product ${prod_id:0:8} at warehouse ${wh_id:0:8} (HTTP $status)"
       fi
 
+      # Set min threshold
       local threshold="${thresholds[$pi]}"
       api_put "/api/v1/stock/threshold" \
         "{\"product_id\":\"${prod_id}\",\"warehouse_id\":\"${wh_id}\",\"threshold\":${threshold}}" \
@@ -340,6 +363,7 @@ setup_stock() {
   done
 }
 
+# ---------- 5. Carriers ----------
 
 declare -a CARRIER_IDS=()
 
@@ -384,25 +408,29 @@ create_carriers() {
   log_info "Total carriers tracked: ${#CARRIER_IDS[@]}"
 }
 
+# ---------- 6. Orders ----------
 
 declare -a ORDER_IDS=()
 
 create_orders() {
   log_step "Creating Orders (10 orders in various statuses)"
 
-  if [ ${
+  if [ ${#PRODUCT_IDS[@]} -lt 4 ]; then
     log_error "Not enough products to create orders"
     return 1
   fi
 
+  # Use operator token for creating orders
   local token="${USER_TOKENS[operator]:-$ADMIN_TOKEN}"
 
+  # Idempotency: check if orders already exist
   local existing_orders
   existing_orders=$(api_get "/api/v1/orders?limit=1" "$token")
   local existing_count
   existing_count=$(json_field "$existing_orders" '.meta.total // 0')
   if [ "$existing_count" -ge 10 ]; then
     log_warn "Orders already seeded ($existing_count orders found), skipping"
+    # Populate ORDER_IDS from existing data for shipment creation
     local all_orders
     all_orders=$(api_get "/api/v1/orders?limit=10&sort=created_at&order=asc" "$token")
     for idx in $(seq 0 9); do
@@ -413,60 +441,73 @@ create_orders() {
     return 0
   fi
 
-  local order1="{\"customer_name\":\"Dmitry Ivanov\",\"items\":[
+  # Order 1: Pending — fresh order
+  local order1="{\"customer_name\":\"Dmytro Ivanenko\",\"items\":[
     {\"product_id\":\"${PRODUCT_IDS[0]}\",\"name\":\"ProBook Laptop 15\",\"quantity\":2,\"unit_price\":899.99},
     {\"product_id\":\"${PRODUCT_IDS[3]}\",\"name\":\"NoiseFree Pro Headphones\",\"quantity\":3,\"unit_price\":199.99}
   ]}"
 
-  local order2="{\"customer_name\":\"Natalia Fedorova\",\"items\":[
+  # Order 2: Pending — another fresh order
+  local order2="{\"customer_name\":\"Nataliia Fedorenko\",\"items\":[
     {\"product_id\":\"${PRODUCT_IDS[8]}\",\"name\":\"AllWeather Jacket\",\"quantity\":5,\"unit_price\":129.99},
     {\"product_id\":\"${PRODUCT_IDS[11]}\",\"name\":\"TrailMaster Boots\",\"quantity\":5,\"unit_price\":149.99}
   ]}"
 
-  local order3="{\"customer_name\":\"Sergei Popov\",\"items\":[
+  # Order 3: will be Confirmed
+  local order3="{\"customer_name\":\"Serhii Popovskyi\",\"items\":[
     {\"product_id\":\"${PRODUCT_IDS[4]}\",\"name\":\"ErgoMax Office Chair\",\"quantity\":10,\"unit_price\":349.99},
     {\"product_id\":\"${PRODUCT_IDS[5]}\",\"name\":\"StandUp Adjustable Desk\",\"quantity\":10,\"unit_price\":549.99}
   ]}"
 
-  local order4="{\"customer_name\":\"Anna Mikhailova\",\"items\":[
+  # Order 4: will be Processing
+  local order4="{\"customer_name\":\"Anna Mykhailenko\",\"items\":[
     {\"product_id\":\"${PRODUCT_IDS[12]}\",\"name\":\"Mountain Blend Coffee\",\"quantity\":50,\"unit_price\":24.99},
     {\"product_id\":\"${PRODUCT_IDS[13]}\",\"name\":\"Zen Garden Green Tea\",\"quantity\":30,\"unit_price\":18.99},
     {\"product_id\":\"${PRODUCT_IDS[15]}\",\"name\":\"NutriBar Variety Pack\",\"quantity\":20,\"unit_price\":29.99}
   ]}"
 
-  local order5="{\"customer_name\":\"Viktor Kozlov\",\"items\":[
+  # Order 5: will be Shipped
+  local order5="{\"customer_name\":\"Viktor Kozachenko\",\"items\":[
     {\"product_id\":\"${PRODUCT_IDS[16]}\",\"name\":\"PowerDrive Cordless Drill\",\"quantity\":15,\"unit_price\":89.99},
     {\"product_id\":\"${PRODUCT_IDS[18]}\",\"name\":\"ProMaster Toolkit 150pc\",\"quantity\":10,\"unit_price\":199.99}
   ]}"
 
-  local order6="{\"customer_name\":\"Olga Lebedeva\",\"items\":[
+  # Order 6: will be Delivered
+  local order6="{\"customer_name\":\"Olha Lebedynska\",\"items\":[
     {\"product_id\":\"${PRODUCT_IDS[1]}\",\"name\":\"SmartPhone X12\",\"quantity\":3,\"unit_price\":699.99},
     {\"product_id\":\"${PRODUCT_IDS[2]}\",\"name\":\"TabPro 10\",\"quantity\":2,\"unit_price\":449.99}
   ]}"
 
-  local order7="{\"customer_name\":\"Pavel Orlov\",\"items\":[
+  # Order 7: will be Completed
+  local order7="{\"customer_name\":\"Pavlo Orlovskyi\",\"items\":[
     {\"product_id\":\"${PRODUCT_IDS[6]}\",\"name\":\"BookWall Shelf Unit\",\"quantity\":4,\"unit_price\":179.99},
     {\"product_id\":\"${PRODUCT_IDS[7]}\",\"name\":\"SecureLock Filing Cabinet\",\"quantity\":6,\"unit_price\":229.99}
   ]}"
 
-  local order8="{\"customer_name\":\"Ekaterina Novikova\",\"items\":[
+  # Order 8: will be Cancelled
+  local order8="{\"customer_name\":\"Kateryna Novak\",\"items\":[
     {\"product_id\":\"${PRODUCT_IDS[9]}\",\"name\":\"ComfortFit Polo Shirt\",\"quantity\":100,\"unit_price\":39.99},
     {\"product_id\":\"${PRODUCT_IDS[10]}\",\"name\":\"FlexWear Cargo Pants\",\"quantity\":50,\"unit_price\":59.99}
   ]}"
 
-  local order9="{\"customer_name\":\"Andrei Smirnov\",\"items\":[
+  # Order 9: Pending — large order
+  local order9="{\"customer_name\":\"Andrii Smiian\",\"items\":[
     {\"product_id\":\"${PRODUCT_IDS[14]}\",\"name\":\"PureSpring Water Pack\",\"quantity\":200,\"unit_price\":12.99},
     {\"product_id\":\"${PRODUCT_IDS[15]}\",\"name\":\"NutriBar Variety Pack\",\"quantity\":100,\"unit_price\":29.99}
   ]}"
 
-  local order10="{\"customer_name\":\"Yulia Morozova\",\"items\":[
+  # Order 10: will be Confirmed
+  local order10="{\"customer_name\":\"Yuliia Morozenko\",\"items\":[
     {\"product_id\":\"${PRODUCT_IDS[17]}\",\"name\":\"PrecisionCut Circular Saw\",\"quantity\":8,\"unit_price\":119.99},
     {\"product_id\":\"${PRODUCT_IDS[19]}\",\"name\":\"LaserPoint Distance Meter\",\"quantity\":12,\"unit_price\":69.99}
   ]}"
 
   local orders=("$order1" "$order2" "$order3" "$order4" "$order5" "$order6" "$order7" "$order8" "$order9" "$order10")
-  local customers=("Dmitry Ivanov" "Natalia Fedorova" "Sergei Popov" "Anna Mikhailova" "Viktor Kozlov" "Olga Lebedeva" "Pavel Orlov" "Ekaterina Novikova" "Andrei Smirnov" "Yulia Morozova")
+  local customers=("Dmytro Ivanenko" "Nataliia Fedorenko" "Serhii Popovskyi" "Anna Mykhailenko" "Viktor Kozachenko" "Olha Lebedynska" "Pavlo Orlovskyi" "Kateryna Novak" "Andrii Smiian" "Yuliia Morozenko")
 
+  # Target statuses for each order
+  # 1:pending, 2:pending, 3:confirmed, 4:processing, 5:shipped,
+  # 6:delivered, 7:completed, 8:cancelled, 9:pending, 10:confirmed
 
   for i in "${!orders[@]}"; do
     local response
@@ -484,13 +525,16 @@ create_orders() {
     fi
   done
 
+  # Now transition orders to target statuses
   log_info "Transitioning orders to target statuses..."
 
+  # Order 3 (index 2): pending → confirmed
   if [ -n "${ORDER_IDS[2]:-}" ]; then
     api_put "/api/v1/orders/${ORDER_IDS[2]}/status" '{"status":"confirmed"}' "$token" > /dev/null 2>&1
     log_info "  Order #3 → confirmed"
   fi
 
+  # Order 4 (index 3): pending → confirmed → processing
   if [ -n "${ORDER_IDS[3]:-}" ]; then
     api_put "/api/v1/orders/${ORDER_IDS[3]}/status" '{"status":"confirmed"}' "$token" > /dev/null 2>&1
     sleep 0.2
@@ -498,6 +542,7 @@ create_orders() {
     log_info "  Order #4 → processing"
   fi
 
+  # Order 5 (index 4): pending → confirmed → processing → shipped
   if [ -n "${ORDER_IDS[4]:-}" ]; then
     api_put "/api/v1/orders/${ORDER_IDS[4]}/status" '{"status":"confirmed"}' "$token" > /dev/null 2>&1
     sleep 0.2
@@ -507,6 +552,7 @@ create_orders() {
     log_info "  Order #5 → shipped"
   fi
 
+  # Order 6 (index 5): pending → confirmed → processing → shipped → delivered
   if [ -n "${ORDER_IDS[5]:-}" ]; then
     api_put "/api/v1/orders/${ORDER_IDS[5]}/status" '{"status":"confirmed"}' "$token" > /dev/null 2>&1
     sleep 0.2
@@ -518,6 +564,7 @@ create_orders() {
     log_info "  Order #6 → delivered"
   fi
 
+  # Order 7 (index 6): full workflow → completed
   if [ -n "${ORDER_IDS[6]:-}" ]; then
     api_put "/api/v1/orders/${ORDER_IDS[6]}/status" '{"status":"confirmed"}' "$token" > /dev/null 2>&1
     sleep 0.2
@@ -531,30 +578,34 @@ create_orders() {
     log_info "  Order #7 → completed"
   fi
 
+  # Order 8 (index 7): pending → cancelled
   if [ -n "${ORDER_IDS[7]:-}" ]; then
     api_post "/api/v1/orders/${ORDER_IDS[7]}/cancel" '{"reason":"Customer changed their mind — requested full refund"}' "$token" > /dev/null 2>&1
     log_info "  Order #8 → cancelled"
   fi
 
+  # Order 10 (index 9): pending → confirmed
   if [ -n "${ORDER_IDS[9]:-}" ]; then
     api_put "/api/v1/orders/${ORDER_IDS[9]}/status" '{"status":"confirmed"}' "$token" > /dev/null 2>&1
     log_info "  Order #10 → confirmed"
   fi
 }
 
+# ---------- 7. Shipments ----------
 
 declare -a SHIPMENT_IDS=()
 
 create_shipments() {
   log_step "Creating Shipments (5 shipments with various statuses)"
 
-  if [ ${
+  if [ ${#ORDER_IDS[@]} -lt 8 ] || [ ${#CARRIER_IDS[@]} -lt 3 ] || [ ${#WAREHOUSE_IDS[@]} -lt 1 ]; then
     log_error "Not enough orders, carriers, or warehouses for shipments"
     return 1
   fi
 
   local token="${USER_TOKENS[logistics_manager]:-$ADMIN_TOKEN}"
 
+  # Idempotency: check if shipments already exist
   local existing_shipments
   existing_shipments=$(api_get "/api/v1/shipments?limit=1" "$ADMIN_TOKEN")
   local existing_count
@@ -565,14 +616,14 @@ create_shipments() {
   fi
 
   local shipments=(
-    "{\"order_id\":\"${ORDER_IDS[4]}\",\"warehouse_id\":\"${WAREHOUSE_IDS[0]}\",\"carrier_id\":\"${CARRIER_IDS[0]}\",\"address\":\"15 Lenina St, Kazan, Russia 420111\"}"
-    "{\"order_id\":\"${ORDER_IDS[5]}\",\"warehouse_id\":\"${WAREHOUSE_IDS[1]}\",\"carrier_id\":\"${CARRIER_IDS[1]}\",\"address\":\"32 Gagarina Blvd, Yekaterinburg, Russia 620075\"}"
-    "{\"order_id\":\"${ORDER_IDS[6]}\",\"warehouse_id\":\"${WAREHOUSE_IDS[0]}\",\"carrier_id\":\"${CARRIER_IDS[0]}\",\"address\":\"88 Pushkina St, Sochi, Russia 354000\"}"
-    "{\"order_id\":\"${ORDER_IDS[3]}\",\"warehouse_id\":\"${WAREHOUSE_IDS[2]}\",\"carrier_id\":\"${CARRIER_IDS[2]}\",\"address\":\"5 Mira Prospekt, Vladivostok, Russia 690091\"}"
-    "{\"order_id\":\"${ORDER_IDS[2]}\",\"warehouse_id\":\"${WAREHOUSE_IDS[1]}\",\"carrier_id\":\"${CARRIER_IDS[0]}\",\"address\":\"21 Arbat St, Moscow, Russia 119002\"}"
+    "{\"order_id\":\"${ORDER_IDS[4]}\",\"warehouse_id\":\"${WAREHOUSE_IDS[0]}\",\"carrier_id\":\"${CARRIER_IDS[0]}\",\"address\":\"Soborna St, 15, Kharkiv, Ukraine 61000\"}"
+    "{\"order_id\":\"${ORDER_IDS[5]}\",\"warehouse_id\":\"${WAREHOUSE_IDS[1]}\",\"carrier_id\":\"${CARRIER_IDS[1]}\",\"address\":\"Sobornyi Ave, 32, Dnipro, Ukraine 49000\"}"
+    "{\"order_id\":\"${ORDER_IDS[6]}\",\"warehouse_id\":\"${WAREHOUSE_IDS[0]}\",\"carrier_id\":\"${CARRIER_IDS[0]}\",\"address\":\"Pushkinska St, 88, Vinnytsia, Ukraine 21000\"}"
+    "{\"order_id\":\"${ORDER_IDS[3]}\",\"warehouse_id\":\"${WAREHOUSE_IDS[2]}\",\"carrier_id\":\"${CARRIER_IDS[2]}\",\"address\":\"Yavornytskoho Ave, 5, Zaporizhzhia, Ukraine 69000\"}"
+    "{\"order_id\":\"${ORDER_IDS[2]}\",\"warehouse_id\":\"${WAREHOUSE_IDS[1]}\",\"carrier_id\":\"${CARRIER_IDS[0]}\",\"address\":\"Soborna St, 21, Poltava, Ukraine 36000\"}"
   )
 
-  local descriptions=("Shipped order for Viktor Kozlov" "Delivered order for Olga Lebedeva" "Completed order for Pavel Orlov" "Processing order for Anna Mikhailova" "Confirmed order for Sergei Popov")
+  local descriptions=("Shipped order for Viktor Kozachenko" "Delivered order for Olha Lebedynska" "Completed order for Pavlo Orlovskyi" "Processing order for Anna Mykhailenko" "Confirmed order for Serhii Popovskyi")
 
   for i in "${!shipments[@]}"; do
     local response
@@ -590,8 +641,10 @@ create_shipments() {
     fi
   done
 
+  # Transition shipments to various statuses
   log_info "Transitioning shipments to target statuses..."
 
+  # Shipment 1 (index 0): created → picked_up → in_transit (shipped)
   if [ -n "${SHIPMENT_IDS[0]:-}" ]; then
     api_put "/api/v1/shipments/${SHIPMENT_IDS[0]}/status" '{"status":"picked_up"}' "$ADMIN_TOKEN" > /dev/null 2>&1
     sleep 0.2
@@ -599,6 +652,7 @@ create_shipments() {
     log_info "  Shipment #1 → in_transit"
   fi
 
+  # Shipment 2 (index 1): created → picked_up → in_transit → delivered
   if [ -n "${SHIPMENT_IDS[1]:-}" ]; then
     api_put "/api/v1/shipments/${SHIPMENT_IDS[1]}/status" '{"status":"picked_up"}' "$ADMIN_TOKEN" > /dev/null 2>&1
     sleep 0.2
@@ -608,6 +662,7 @@ create_shipments() {
     log_info "  Shipment #2 → delivered"
   fi
 
+  # Shipment 3 (index 2): created → picked_up → in_transit → delivered
   if [ -n "${SHIPMENT_IDS[2]:-}" ]; then
     api_put "/api/v1/shipments/${SHIPMENT_IDS[2]}/status" '{"status":"picked_up"}' "$ADMIN_TOKEN" > /dev/null 2>&1
     sleep 0.2
@@ -617,70 +672,243 @@ create_shipments() {
     log_info "  Shipment #3 → delivered"
   fi
 
+  # Shipment 4 (index 3): created → picked_up (in progress)
   if [ -n "${SHIPMENT_IDS[3]:-}" ]; then
     api_put "/api/v1/shipments/${SHIPMENT_IDS[3]}/status" '{"status":"picked_up"}' "$ADMIN_TOKEN" > /dev/null 2>&1
     log_info "  Shipment #4 → picked_up"
   fi
 
+  # Shipment 5 (index 4): stays as created
   if [ -n "${SHIPMENT_IDS[4]:-}" ]; then
     log_info "  Shipment #5 → created (no transition)"
   fi
 }
 
+# ---------- 8. Notifications (per-staff distribution) ----------
+
+seed_notifications() {
+  log_step "Seeding Notifications across Staff Users"
+
+  if ! docker compose exec -T postgres psql -U postgres -d chainorchestra >/dev/null 2>&1 <<'PSQL'
+SELECT 1;
+PSQL
+  then
+    log_warn "Cannot reach postgres via docker compose; skipping notification seed"
+    return 0
+  fi
+
+  docker compose exec -T postgres psql -U postgres -d chainorchestra -v ON_ERROR_STOP=1 <<'PSQL'
+DELETE FROM notifications.notification
+WHERE created_at >= NOW() - INTERVAL '120 days';
+
+WITH staff AS (
+  SELECT id::text AS user_id, role
+  FROM users.users
+  WHERE deleted_at IS NULL
+    AND role IN ('admin','warehouse_manager','logistics_manager','analyst','operator')
+),
+templates AS (
+  SELECT * FROM (VALUES
+    ('admin',             'system',            'System backup completed',     'Database backup completed at 03:14 UTC.'),
+    ('admin',             'system',            'New user registered',         'A new operator account joined the system.'),
+    ('admin',             'order_updated',     'Order escalation',            'Order ORD-#### requires admin attention.'),
+    ('warehouse_manager', 'low_stock',         'Low stock alert',             'Floor Mats stock dropped below threshold at Kyiv Hub.'),
+    ('warehouse_manager', 'low_stock',         'Low stock alert',             'LED Bulbs are running low at Lviv DC.'),
+    ('warehouse_manager', 'stock_changed',     'Stock replenished',           'Office Chairs were restocked at Odesa Depot (+120 units).'),
+    ('warehouse_manager', 'stock_changed',     'Stock adjustment',            'Stock recount adjusted Steel Bolts at Kyiv Hub.'),
+    ('logistics_manager', 'shipment_created',  'Shipment created',            'Shipment for order ORD-#### dispatched with Nova Express.'),
+    ('logistics_manager', 'shipment_updated',  'Shipment in transit',         'Shipment SH-#### is now in transit through Vinnytsia.'),
+    ('logistics_manager', 'shipment_updated',  'Shipment delivered',          'Shipment SH-#### was delivered successfully in Kharkiv.'),
+    ('logistics_manager', 'shipment_updated',  'Carrier delay reported',      'Carrier reported a 6h delay for shipment SH-####.'),
+    ('analyst',           'system',            'Weekly report ready',         'Sales analytics for the past week is now available.'),
+    ('analyst',           'system',            'Anomaly detected',            'Unusual sales spike detected for category Electronics.'),
+    ('analyst',           'system',            'Forecast refresh complete',   'Demand forecast model refreshed for the next 30 days.'),
+    ('operator',          'order_created',     'New order received',          'Order ORD-#### was placed by a new customer.'),
+    ('operator',          'order_created',     'New order received',          'Order ORD-#### needs operator review.'),
+    ('operator',          'order_cancelled',   'Order cancelled',             'Order ORD-#### was cancelled by the customer.'),
+    ('operator',          'order_updated',     'Order status updated',        'Order ORD-#### moved to processing.')
+  ) AS t(role, type, title, message)
+)
+INSERT INTO notifications.notification (id, user_id, type, title, message, status, read_at, created_at)
+SELECT
+  gen_random_uuid(),
+  s.user_id,
+  t.type,
+  t.title,
+  REPLACE(t.message, '####', LPAD((10000 + (random() * 89999)::int)::text, 5, '0')),
+  CASE WHEN random() < 0.55 THEN 'pending' ELSE 'read' END AS status,
+  CASE WHEN random() < 0.55 THEN NULL ELSE NOW() - (random() * interval '40 days') END AS read_at,
+  NOW() - (random() * interval '60 days') AS created_at
+FROM staff s
+JOIN templates t ON t.role = s.role
+CROSS JOIN generate_series(1, 8) g;
+
+UPDATE notifications.notification SET status = 'pending' WHERE status = 'unread';
+
+SELECT u.role,
+       u.email,
+       COUNT(n.id) FILTER (WHERE n.status = 'pending') AS unread,
+       COUNT(n.id)                                    AS total
+FROM users.users u
+LEFT JOIN notifications.notification n ON n.user_id = u.id::text
+WHERE u.deleted_at IS NULL
+  AND u.role IN ('admin','warehouse_manager','logistics_manager','analyst','operator')
+GROUP BY u.role, u.email
+ORDER BY unread DESC;
+PSQL
+
+  log_info "Notification seed complete"
+}
+
+# ---------- 8b. Quick-cancellation forensic scenarios ----------
+
+seed_quick_cancellations() {
+  log_step "Seeding Quick-Cancellation Forensic Scenarios"
+
+  if ! docker compose exec -T postgres psql -U postgres -d chainorchestra >/dev/null 2>&1 <<'PSQL'
+SELECT 1;
+PSQL
+  then
+    log_warn "Cannot reach postgres via docker compose; skipping quick-cancel seed"
+    return 0
+  fi
+
+  docker compose exec -T postgres psql -U postgres -d chainorchestra -v ON_ERROR_STOP=1 <<'PSQL'
+WITH transcontinental AS (
+  SELECT id FROM logistics.carrier WHERE name = 'TransContinental Express' LIMIT 1
+),
+oceanline AS (
+  SELECT id FROM logistics.carrier WHERE name = 'OceanLine Cargo' LIMIT 1
+),
+candidate_shipments AS (
+  SELECT s.id AS shipment_id, s.order_id, s.created_at, s.address, s.carrier_id
+  FROM logistics.shipment s
+  JOIN orders.orders o ON o.id::text = s.order_id
+  WHERE s.deleted_at IS NULL
+    AND o.deleted_at IS NULL
+    AND o.status IN ('shipped','delivered','completed')
+    AND s.created_at >= NOW() - INTERVAL '90 days'
+  ORDER BY random()
+  LIMIT 50
+),
+hotspot_pool AS (
+  SELECT shipment_id, order_id, created_at,
+         'Soborna St, ' || (10 + (random()*89)::int)::text || ', Kharkiv, Ukraine 61000' AS address,
+         (SELECT id FROM transcontinental) AS carrier_id
+  FROM candidate_shipments
+  ORDER BY random() LIMIT 12
+),
+secondary_pool AS (
+  SELECT shipment_id, order_id, created_at,
+         'Sobornyi Ave, ' || (10 + (random()*89)::int)::text || ', Dnipro, Ukraine 49000' AS address,
+         (SELECT id FROM oceanline) AS carrier_id
+  FROM candidate_shipments
+  WHERE shipment_id NOT IN (SELECT shipment_id FROM hotspot_pool)
+  ORDER BY random() LIMIT 5
+),
+spread_pool AS (
+  SELECT shipment_id, order_id, created_at, address, carrier_id
+  FROM candidate_shipments
+  WHERE shipment_id NOT IN (SELECT shipment_id FROM hotspot_pool UNION ALL SELECT shipment_id FROM secondary_pool)
+  ORDER BY random() LIMIT 8
+),
+all_targets AS (
+  SELECT * FROM hotspot_pool
+  UNION ALL SELECT * FROM secondary_pool
+  UNION ALL SELECT * FROM spread_pool
+)
+UPDATE logistics.shipment s
+SET address = t.address,
+    carrier_id = t.carrier_id,
+    status = 'cancelled',
+    updated_at = t.created_at + make_interval(mins => 5 + (random()*50)::int)
+FROM all_targets t
+WHERE s.id = t.shipment_id;
+
+UPDATE orders.orders o
+SET status = 'cancelled',
+    cancel_reason = CASE
+      WHEN c.name = 'TransContinental Express' AND s.address LIKE '%Kharkiv%'
+        THEN 'Customer reported address mismatch — investigate carrier handover'
+      WHEN c.name = 'OceanLine Cargo' AND s.address LIKE '%Dnipro%'
+        THEN 'Damaged on dispatch — pickup refused'
+      ELSE 'Customer cancelled after dispatch'
+    END,
+    updated_at = s.created_at + make_interval(mins => 5 + (random()*50)::int)
+FROM logistics.shipment s
+JOIN logistics.carrier c ON c.id = s.carrier_id
+WHERE o.id::text = s.order_id
+  AND s.status = 'cancelled'
+  AND s.created_at >= NOW() - INTERVAL '90 days';
+PSQL
+
+  log_info "Quick-cancel forensic seed complete (~25 events)"
+}
+
+# ---------- 9. Verify ----------
 
 verify_data() {
   log_step "Verifying Seed Data"
 
   local token="$ADMIN_TOKEN"
 
+  # Check users
   local users_response
   users_response=$(api_get "/api/v1/users?limit=10" "$token")
   local user_count
   user_count=$(json_field "$users_response" '.meta.total // 0')
   log_info "Users: $user_count (expected: 5)"
 
+  # Check products
   local products_response
   products_response=$(api_get "/api/v1/products?limit=1" "$token")
   local product_count
   product_count=$(json_field "$products_response" '.meta.total // 0')
   log_info "Products: $product_count (expected: 20)"
 
+  # Check warehouses
   local warehouses_response
   warehouses_response=$(api_get "/api/v1/warehouses?limit=1" "$token")
   local warehouse_count
   warehouse_count=$(json_field "$warehouses_response" '.meta.total // 0')
   log_info "Warehouses: $warehouse_count (expected: 3)"
 
+  # Check orders
   local orders_response
   orders_response=$(api_get "/api/v1/orders?limit=1" "$token")
   local order_count
   order_count=$(json_field "$orders_response" '.meta.total // 0')
   log_info "Orders: $order_count (expected: 10)"
 
+  # Check order stats
   local stats_response
   stats_response=$(api_get "/api/v1/orders/stats" "$token")
   local stats_body
   stats_body=$(echo "$stats_response" | sed '$d')
   log_info "Order stats: $stats_body"
 
+  # Check carriers
   local carriers_response
   carriers_response=$(api_get "/api/v1/carriers?limit=1" "$token")
   local carrier_count
   carrier_count=$(json_field "$carriers_response" '.meta.total // 0')
   log_info "Carriers: $carrier_count (expected: 3)"
 
+  # Check shipments
   local shipments_response
   shipments_response=$(api_get "/api/v1/shipments?limit=1" "$token")
   local shipment_count
   shipment_count=$(json_field "$shipments_response" '.meta.total // 0')
   log_info "Shipments: $shipment_count (expected: 5+)"
 
+  # Check stock
   local stock_response
   stock_response=$(api_get "/api/v1/stock?limit=1" "$token")
   local stock_count
   stock_count=$(json_field "$stock_response" '.meta.total // 0')
   log_info "Stock entries: $stock_count (expected: 60)"
 
+  # Check low stock
   local low_stock_response
   low_stock_response=$(api_get "/api/v1/stock/low" "$token")
   local low_stock_body
@@ -690,6 +918,7 @@ verify_data() {
   log_info "Low-stock items: $low_count"
 }
 
+# ---------- Main ----------
 
 main() {
   echo -e "${BLUE}"
@@ -698,6 +927,7 @@ main() {
   echo "  ╚══════════════════════════════════════╝"
   echo -e "${NC}"
 
+  # Check for jq
   if ! command -v jq &> /dev/null; then
     log_error "jq is required but not installed. Install with: brew install jq"
     exit 1
@@ -712,17 +942,19 @@ main() {
   create_carriers
   create_orders
   create_shipments
+  seed_notifications
+  seed_quick_cancellations
   verify_data
 
   log_step "Seed Complete"
   log_info "All seed data has been populated successfully!"
   log_info ""
-  log_info "Test credentials:"
-  log_info "  Admin:             admin@chainorchestra.local / admin123"
-  log_info "  Operator:          ivan.petrov@chainorchestra.local / Operator1!"
-  log_info "  Warehouse Manager: maria.kuznetsova@chainorchestra.local / Warehouse1!"
-  log_info "  Logistics Manager: alexei.volkov@chainorchestra.local / Logistics1!"
-  log_info "  Analyst:           elena.sokolova@chainorchestra.local / Analyst1!"
+  log_info "Test credentials (see /Users/haradrim/Desktop/test-credentials.txt for the strong-password set):"
+  log_info "  Admin:             admin@chainorchestra.local"
+  log_info "  Operator:          ivan.petrenko@chainorchestra.local"
+  log_info "  Warehouse Manager: maria.kovalenko@chainorchestra.local"
+  log_info "  Logistics Manager: oleksii.shevchenko@chainorchestra.local"
+  log_info "  Analyst:           olena.bondarenko@chainorchestra.local"
 }
 
 main "$@"
