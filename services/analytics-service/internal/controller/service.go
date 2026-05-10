@@ -345,6 +345,10 @@ func (s *Service) GetCarrierPerformance(ctx context.Context, from, to time.Time,
 	return s.storage.GetCarrierPerformance(ctx, from, to, slaHours, worstCitiesPerCarrier)
 }
 
+func (s *Service) GetCustomerProfile360(ctx context.Context, customerName string, recentN int, topCategoriesN int) (analytics.CustomerProfile360, error) {
+	return s.storage.GetCustomerProfile360(ctx, customerName, recentN, topCategoriesN)
+}
+
 func (s *Service) GetOptimizations(ctx context.Context, from, to time.Time) ([]analytics.Optimization, error) {
 	salesRecords, err := s.storage.GetSalesDaily(ctx, from, to)
 	if err != nil {

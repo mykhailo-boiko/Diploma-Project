@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -27,6 +28,7 @@ type AnalyticsService interface {
 	GetQuickCancellations(ctx context.Context, from, to time.Time, maxMinutes int) ([]analytics.QuickCancellation, error)
 	GetRebalancingRecommendations(ctx context.Context, params analytics.RebalancingParams) ([]analytics.RebalancingRecommendation, error)
 	GetCarrierPerformance(ctx context.Context, from, to time.Time, slaHours int, worstCitiesPerCarrier int) ([]analytics.CarrierPerformance, error)
+	GetCustomerProfile360(ctx context.Context, customerName string, recentN int, topCategoriesN int) (analytics.CustomerProfile360, error)
 }
 
 type AnalyticsController struct {
@@ -241,6 +243,41 @@ func (c *AnalyticsController) GenerateReport(w http.ResponseWriter, r *http.Requ
 	}
 
 	httpresponse.OK(w, report)
+}
+
+func (c *AnalyticsController) GetCustomerProfile360(w http.ResponseWriter, r *http.Request) {
+	customerName := r.URL.Query().Get("customer_name")
+	if customerName == "" {
+		httpresponse.BadRequest(w, "validation_error", "customer_name is required")
+		return
+	}
+
+	recentN := 5
+	if s := r.URL.Query().Get("recent_n"); s != "" {
+		if v, err := strconv.Atoi(s); err == nil && v > 0 {
+			recentN = v
+		}
+	}
+
+	topCategoriesN := 5
+	if s := r.URL.Query().Get("top_categories_n"); s != "" {
+		if v, err := strconv.Atoi(s); err == nil && v > 0 {
+			topCategoriesN = v
+		}
+	}
+
+	profile, err := c.svc.GetCustomerProfile360(r.Context(), customerName, recentN, topCategoriesN)
+	if err != nil {
+		if errors.Is(err, analytics.ErrCustomerNotFound) {
+			httpresponse.NotFound(w, "customer_not_found", "customer not found")
+			return
+		}
+		c.log.Error("Failed to get customer profile 360", zap.Error(err))
+		httpresponse.InternalError(w, "internal_error", "internal server error")
+		return
+	}
+
+	httpresponse.OK(w, profile)
 }
 
 func (c *AnalyticsController) GetCarrierPerformance(w http.ResponseWriter, r *http.Request) {

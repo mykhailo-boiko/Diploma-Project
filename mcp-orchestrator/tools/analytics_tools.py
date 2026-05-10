@@ -143,6 +143,44 @@ def register(mcp: FastMCP) -> None:
         })
 
     @mcp.tool()
+    async def customers_profile_360(
+        customer_name: str,
+        recent_n: int = 5,
+        top_categories_n: int = 5,
+    ) -> dict[str, Any]:
+        """Full executive-grade profile of a single customer in ONE call: lifetime aggregates,
+        churn risk, top spending categories, recent orders, status mix, behaviour metrics.
+
+        Use this for ANY 'everything about customer X', 'full profile of', 'customer overview',
+        'customer dossier', 'how valuable is this customer', 'is this customer at risk' question.
+        DO NOT compose this from orders_list + orders_get + orders_customer_summary — one call is faster
+        and atomic.
+
+        Result fields:
+            - lifetime_value, order_count, avg_order_value, first_order_date, last_order_date
+            - days_since_last_order, median_inter_order_days
+            - churn_risk_score (0..1, computed as 1 - exp(-days_since_last/(2 * median_inter_order)))
+            - is_new_customer_90_days (bool)
+            - status_breakdown: map of order status -> count for this customer
+            - top_categories: top-N spending categories (revenue + units)
+            - recent_orders: last-N order headers
+
+        Cancelled and returned orders are excluded from lifetime aggregates (but included in
+        status_breakdown so you see the full mix).
+
+        Args:
+            customer_name: Exact customer name (case-sensitive). Use orders_search if you have
+                only partial info.
+            recent_n: How many most-recent orders to include (default 5).
+            top_categories_n: How many top spending categories to include (default 5).
+        """
+        return await api_get("/api/v1/analytics/customers/profile-360", {
+            "customer_name": customer_name,
+            "recent_n": recent_n,
+            "top_categories_n": top_categories_n,
+        })
+
+    @mcp.tool()
     async def analytics_carriers_performance(
         date_from: str,
         date_to: str,

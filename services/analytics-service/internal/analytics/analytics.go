@@ -2,6 +2,7 @@ package analytics
 
 import (
 	"context"
+	"errors"
 	"time"
 )
 
@@ -110,6 +111,35 @@ type Report struct {
 	Data       any    `json:"data"`
 }
 
+type CategorySpend struct {
+	Category  string  `json:"category"`
+	Revenue   float64 `json:"revenue"`
+	UnitsSold int     `json:"units_sold"`
+}
+
+type OrderHeader struct {
+	ID          string    `json:"id"`
+	Status      string    `json:"status"`
+	TotalAmount float64   `json:"total_amount"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+type CustomerProfile360 struct {
+	CustomerName        string          `json:"customer_name"`
+	FirstOrderDate      time.Time       `json:"first_order_date"`
+	LastOrderDate       time.Time       `json:"last_order_date"`
+	LifetimeValue       float64         `json:"lifetime_value"`
+	OrderCount          int             `json:"order_count"`
+	AvgOrderValue       float64         `json:"avg_order_value"`
+	DaysSinceLastOrder  int             `json:"days_since_last_order"`
+	MedianInterOrderD   float64         `json:"median_inter_order_days"`
+	ChurnRiskScore      float64         `json:"churn_risk_score"`
+	StatusBreakdown     map[string]int  `json:"status_breakdown"`
+	TopCategories       []CategorySpend `json:"top_categories"`
+	RecentOrders        []OrderHeader   `json:"recent_orders"`
+	IsNewCustomer90Days bool            `json:"is_new_customer_90_days"`
+}
+
 type CarrierCityStat struct {
 	City       string  `json:"city"`
 	Delivered  int     `json:"delivered"`
@@ -177,7 +207,10 @@ type Storage interface {
 	GetQuickCancellations(ctx context.Context, from, to time.Time, maxMinutes int) ([]QuickCancellation, error)
 	GetRebalancingRecommendations(ctx context.Context, params RebalancingParams) ([]RebalancingRecommendation, error)
 	GetCarrierPerformance(ctx context.Context, from, to time.Time, slaHours int, worstCitiesPerCarrier int) ([]CarrierPerformance, error)
+	GetCustomerProfile360(ctx context.Context, customerName string, recentN int, topCategoriesN int) (CustomerProfile360, error)
 }
+
+var ErrCustomerNotFound = errors.New("customer not found")
 
 type RebalancingParams struct {
 	OverstockMultiplier float64

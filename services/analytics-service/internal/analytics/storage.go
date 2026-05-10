@@ -3,6 +3,7 @@ package analytics
 import (
 	"context"
 	"fmt"
+	"math"
 	"sort"
 	"time"
 
@@ -183,6 +184,141 @@ func (s *PostgresStorage) GetInventorySnapshots(ctx context.Context, from, to ti
 	}
 
 	return results, nil
+}
+
+func (s *PostgresStorage) GetCustomerProfile360(ctx context.Context, customerName string, recentN int, topCategoriesN int) (CustomerProfile360, error) {
+	if recentN <= 0 {
+		recentN = 5
+	}
+	if topCategoriesN <= 0 {
+		topCategoriesN = 5
+	}
+
+	var profile CustomerProfile360
+	profile.CustomerName = customerName
+	profile.StatusBreakdown = map[string]int{}
+	profile.TopCategories = []CategorySpend{}
+	profile.RecentOrders = []OrderHeader{}
+
+	lifetimeQuery := `
+		SELECT
+			MIN(created_at) AS first_order,
+			MAX(created_at) AS last_order,
+			COUNT(*)::int AS order_count,
+			COALESCE(SUM(total_amount), 0)::float8 AS lifetime_value,
+			COALESCE(AVG(total_amount), 0)::float8 AS aov,
+			COALESCE((
+				SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM gap)) / 86400.0
+				FROM (
+					SELECT created_at - LAG(created_at) OVER (ORDER BY created_at) AS gap
+					FROM orders.orders o2
+					WHERE o2.customer_name = $1 AND o2.deleted_at IS NULL
+					  AND o2.status NOT IN ('cancelled','returned')
+				) g
+				WHERE gap IS NOT NULL
+			), 0)::float8 AS median_inter_order_days
+		FROM orders.orders
+		WHERE customer_name = $1
+			AND deleted_at IS NULL
+			AND status NOT IN ('cancelled','returned')`
+
+	var firstOrder, lastOrder *time.Time
+	if err := s.pool.QueryRow(ctx, lifetimeQuery, customerName).Scan(
+		&firstOrder, &lastOrder,
+		&profile.OrderCount, &profile.LifetimeValue, &profile.AvgOrderValue,
+		&profile.MedianInterOrderD,
+	); err != nil {
+		return CustomerProfile360{}, fmt.Errorf("failed to load lifetime aggregates: %w", err)
+	}
+	if profile.OrderCount == 0 || firstOrder == nil {
+		return CustomerProfile360{}, ErrCustomerNotFound
+	}
+	profile.FirstOrderDate = *firstOrder
+	profile.LastOrderDate = *lastOrder
+	profile.DaysSinceLastOrder = int(time.Since(*lastOrder).Hours() / 24)
+	profile.IsNewCustomer90Days = time.Since(*firstOrder) < 90*24*time.Hour
+
+	if profile.MedianInterOrderD > 0 {
+		x := float64(profile.DaysSinceLastOrder) / profile.MedianInterOrderD
+		profile.ChurnRiskScore = 1 - math.Exp(-x/2.0)
+	} else {
+		profile.ChurnRiskScore = 0
+	}
+	if profile.ChurnRiskScore < 0 {
+		profile.ChurnRiskScore = 0
+	}
+	if profile.ChurnRiskScore > 1 {
+		profile.ChurnRiskScore = 1
+	}
+
+	statusQuery := `
+		SELECT status, COUNT(*)::int
+		FROM orders.orders
+		WHERE customer_name = $1 AND deleted_at IS NULL
+		GROUP BY status`
+	rows, err := s.pool.Query(ctx, statusQuery, customerName)
+	if err != nil {
+		return CustomerProfile360{}, fmt.Errorf("failed to load status breakdown: %w", err)
+	}
+	for rows.Next() {
+		var st string
+		var n int
+		if err := rows.Scan(&st, &n); err != nil {
+			rows.Close()
+			return CustomerProfile360{}, fmt.Errorf("failed to scan status: %w", err)
+		}
+		profile.StatusBreakdown[st] = n
+	}
+	rows.Close()
+
+	catQuery := `
+		SELECT
+			COALESCE(NULLIF(p.category, ''), 'Uncategorized') AS category,
+			COALESCE(SUM(oi.subtotal), 0)::float8 AS revenue,
+			COALESCE(SUM(oi.quantity), 0)::int AS units
+		FROM orders.order_items oi
+		JOIN orders.orders o ON o.id = oi.order_id
+		LEFT JOIN inventory.product p ON p.id::text = oi.product_id
+		WHERE o.customer_name = $1 AND o.deleted_at IS NULL
+			AND o.status NOT IN ('cancelled','returned')
+		GROUP BY COALESCE(NULLIF(p.category, ''), 'Uncategorized')
+		ORDER BY revenue DESC
+		LIMIT $2`
+	catRows, err := s.pool.Query(ctx, catQuery, customerName, topCategoriesN)
+	if err != nil {
+		return CustomerProfile360{}, fmt.Errorf("failed to load top categories: %w", err)
+	}
+	for catRows.Next() {
+		var c CategorySpend
+		if err := catRows.Scan(&c.Category, &c.Revenue, &c.UnitsSold); err != nil {
+			catRows.Close()
+			return CustomerProfile360{}, fmt.Errorf("failed to scan category: %w", err)
+		}
+		profile.TopCategories = append(profile.TopCategories, c)
+	}
+	catRows.Close()
+
+	recentQuery := `
+		SELECT id::text, status, total_amount::float8, created_at
+		FROM orders.orders
+		WHERE customer_name = $1 AND deleted_at IS NULL
+		ORDER BY created_at DESC
+		LIMIT $2`
+	recentRows, err := s.pool.Query(ctx, recentQuery, customerName, recentN)
+	if err != nil {
+		return CustomerProfile360{}, fmt.Errorf("failed to load recent orders: %w", err)
+	}
+	for recentRows.Next() {
+		var o OrderHeader
+		if err := recentRows.Scan(&o.ID, &o.Status, &o.TotalAmount, &o.CreatedAt); err != nil {
+			recentRows.Close()
+			return CustomerProfile360{}, fmt.Errorf("failed to scan recent order: %w", err)
+		}
+		profile.RecentOrders = append(profile.RecentOrders, o)
+	}
+	recentRows.Close()
+
+	return profile, nil
 }
 
 func (s *PostgresStorage) GetCarrierPerformance(ctx context.Context, from, to time.Time, slaHours int, worstCitiesPerCarrier int) ([]CarrierPerformance, error) {
