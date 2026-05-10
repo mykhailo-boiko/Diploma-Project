@@ -16,8 +16,7 @@ _INVENTORY_PREFIXES = ("products_", "warehouses_", "stock_", "inventory_")
 _LOGISTICS_PREFIXES = ("shipments_", "carriers_", "routes_", "logistics_")
 _ANALYTICS_PREFIXES = ("analytics_",)
 _NOTIFICATIONS_PREFIXES = ("notifications_",)
-_COMMON_PREFIXES = ("users_login", "users_register", "users_refresh_token",
-                    "users_password_reset", "users_me", "users_update_profile")
+_COMMON_PREFIXES = ("users_me", "users_update_profile")
 
 ROLE_PERMISSIONS: dict[str, tuple[str, ...]] = {
     "admin": ("*",),

@@ -72,13 +72,18 @@ class TestOperatorRole:
         names = _tool_names(result)
         assert "analytics_sales" not in names
 
-    def test_operator_sees_common_auth_tools(self):
+    def test_operator_sees_common_profile_tools(self):
         result = filter_tools_by_role(_ALL_TOOLS, "operator")
         names = _tool_names(result)
-        assert "users_login" in names
         assert "users_me" in names
         assert "users_update_profile" in names
-        assert "users_refresh_token" in names
+
+    def test_operator_does_not_see_preauth_tools(self):
+        result = filter_tools_by_role(_ALL_TOOLS, "operator")
+        names = _tool_names(result)
+        assert "users_login" not in names
+        assert "users_refresh_token" not in names
+        assert "users_password_reset" not in names
 
     def test_operator_cannot_see_admin_user_tools(self):
         result = filter_tools_by_role(_ALL_TOOLS, "operator")
@@ -134,13 +139,22 @@ class TestAnalystRole:
         assert "orders_list" not in names
         assert "products_list" not in names
 
+    def test_analyst_only_sees_analytics_and_profile(self):
+        result = filter_tools_by_role(_ALL_TOOLS, "analyst")
+        names = _tool_names(result)
+        for name in names:
+            assert name.startswith("analytics_") or name in {"users_me", "users_update_profile"}, (
+                f"unexpected tool leaked to analyst: {name}"
+            )
+
 
 class TestUnknownRole:
     def test_unknown_role_gets_only_common_tools(self):
         result = filter_tools_by_role(_ALL_TOOLS, "unknown_role")
         names = _tool_names(result)
-        assert "users_login" in names
         assert "users_me" in names
+        assert "users_update_profile" in names
+        assert "users_login" not in names
         assert "orders_list" not in names
         assert "products_list" not in names
         assert "analytics_sales" not in names

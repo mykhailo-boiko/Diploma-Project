@@ -7,6 +7,7 @@ JWT_ALGORITHM = "HS256"
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_FALLBACK_MODEL = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-2.5-pro")
 
 MCP_SERVER_CMD = os.getenv("MCP_SERVER_CMD", "python")
 MCP_SERVER_ARGS = os.getenv("MCP_SERVER_ARGS", "../mcp-orchestrator/main.py").split(",")
