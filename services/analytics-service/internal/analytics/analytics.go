@@ -112,6 +112,32 @@ type Report struct {
 	Data       any    `json:"data"`
 }
 
+type AuditEntry struct {
+	ID           string    `json:"id"`
+	ActorUserID  string    `json:"actor_user_id"`
+	ActorEmail   string    `json:"actor_email"`
+	ActorRole    string    `json:"actor_role"`
+	ServiceName  string    `json:"service_name"`
+	Action       string    `json:"action"`
+	EntityType   string    `json:"entity_type,omitempty"`
+	EntityIDs    []string  `json:"entity_ids,omitempty"`
+	ParamsSnip   string    `json:"params_snip,omitempty"`
+	ResultStatus string    `json:"result_status"`
+	SuccessCount int       `json:"success_count"`
+	FailureCount int       `json:"failure_count"`
+	ErrorMessage string    `json:"error_message,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+type AuditFilter struct {
+	ActorEmail string
+	Action     string
+	EntityID   string
+	From       *time.Time
+	To         *time.Time
+	Limit      int
+}
+
 type PeriodSnapshot struct {
 	Label string    `json:"label"`
 	From  time.Time `json:"from"`
@@ -227,6 +253,7 @@ type Storage interface {
 	GetCarrierPerformance(ctx context.Context, from, to time.Time, slaHours int, worstCitiesPerCarrier int) ([]CarrierPerformance, error)
 	GetCustomerProfile360(ctx context.Context, customerName string, recentN int, topCategoriesN int) (CustomerProfile360, error)
 	GetMetricValue(ctx context.Context, metric string, from, to time.Time) (float64, error)
+	QueryAuditLog(ctx context.Context, filter AuditFilter) ([]AuditEntry, error)
 }
 
 var ErrCustomerNotFound = errors.New("customer not found")

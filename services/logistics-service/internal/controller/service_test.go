@@ -139,7 +139,7 @@ func (m *mockCarrierStorage) UpdateCarrier(_ context.Context, c carrier.Carrier)
 func newTestService() (*Service, *mockShipmentStorage, *mockCarrierStorage) {
 	ss := newMockShipmentStorage()
 	cs := newMockCarrierStorage()
-	return NewService(ss, cs, nil, zap.NewNop()), ss, cs
+	return NewService(ss, cs, nil, nil, zap.NewNop()), ss, cs
 }
 
 func createTestCarrier(t *testing.T, svc *Service) carrier.Carrier {

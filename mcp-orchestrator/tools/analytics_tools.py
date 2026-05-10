@@ -149,6 +149,50 @@ def register(mcp: FastMCP) -> None:
         })
 
     @mcp.tool()
+    async def audit_query(
+        actor_email: str | None = None,
+        action: str | None = None,
+        entity_id: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        """Query the audit trail of write operations performed across the platform (admin only).
+
+        Use for ANY 'who did X', 'who changed', 'audit trail', 'show me activity',
+        'find action on entity Y', 'compliance check', 'what AI did' question.
+
+        Logged actions include (action names):
+            - orders.create, orders.update_status, orders.cancel, orders.bulk_update_status
+            - shipments.reassign_carrier, carriers.update
+            - (more services will register their actions here over time)
+
+        Each entry contains: actor_user_id, actor_email, actor_role, service_name, action,
+        entity_type, entity_ids (array), params_snip (truncated JSON), result_status
+        (success|partial|failed), success_count, failure_count, error_message, created_at.
+
+        Args:
+            actor_email: Filter to one actor (exact email).
+            action: Filter to one action (exact match, e.g. "orders.bulk_update_status").
+            entity_id: Filter to entries that touched this entity ID (e.g. order UUID).
+            date_from: Start date (YYYY-MM-DD inclusive).
+            date_to: End date (YYYY-MM-DD inclusive, expanded to end-of-day).
+            limit: Max rows (default 50, max 500).
+        """
+        params: dict[str, Any] = {"limit": limit}
+        if actor_email:
+            params["actor_email"] = actor_email
+        if action:
+            params["action"] = action
+        if entity_id:
+            params["entity_id"] = entity_id
+        if date_from:
+            params["from"] = date_from
+        if date_to:
+            params["to"] = date_to
+        return await api_get("/api/v1/analytics/audit-log", params)
+
+    @mcp.tool()
     async def analytics_period_comparison(
         metric: str,
         a_from: str,

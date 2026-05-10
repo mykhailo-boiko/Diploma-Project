@@ -30,6 +30,7 @@ type AnalyticsService interface {
 	GetCarrierPerformance(ctx context.Context, from, to time.Time, slaHours int, worstCitiesPerCarrier int) ([]analytics.CarrierPerformance, error)
 	GetCustomerProfile360(ctx context.Context, customerName string, recentN int, topCategoriesN int) (analytics.CustomerProfile360, error)
 	GetPeriodComparison(ctx context.Context, metric string, aFrom, aTo, bFrom, bTo time.Time, aLabel, bLabel string) (analytics.PeriodComparison, error)
+	QueryAuditLog(ctx context.Context, filter analytics.AuditFilter) ([]analytics.AuditEntry, error)
 }
 
 type AnalyticsController struct {
@@ -244,6 +245,41 @@ func (c *AnalyticsController) GenerateReport(w http.ResponseWriter, r *http.Requ
 	}
 
 	httpresponse.OK(w, report)
+}
+
+func (c *AnalyticsController) QueryAuditLog(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	var filter analytics.AuditFilter
+	filter.ActorEmail = q.Get("actor_email")
+	filter.Action = q.Get("action")
+	filter.EntityID = q.Get("entity_id")
+	if s := q.Get("from"); s != "" {
+		if t, err := time.Parse("2006-01-02", s); err == nil {
+			filter.From = &t
+		}
+	}
+	if s := q.Get("to"); s != "" {
+		if t, err := time.Parse("2006-01-02", s); err == nil {
+			endOfDay := t.Add(24*time.Hour - time.Second)
+			filter.To = &endOfDay
+		}
+	}
+	if s := q.Get("limit"); s != "" {
+		if v, err := strconv.Atoi(s); err == nil && v > 0 {
+			filter.Limit = v
+		}
+	}
+
+	results, err := c.svc.QueryAuditLog(r.Context(), filter)
+	if err != nil {
+		c.log.Error("Failed to query audit log", zap.Error(err))
+		httpresponse.InternalError(w, "internal_error", "internal server error")
+		return
+	}
+	if results == nil {
+		results = []analytics.AuditEntry{}
+	}
+	httpresponse.OK(w, results)
 }
 
 func (c *AnalyticsController) GetPeriodComparison(w http.ResponseWriter, r *http.Request) {

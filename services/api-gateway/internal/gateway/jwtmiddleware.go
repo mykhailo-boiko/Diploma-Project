@@ -45,6 +45,7 @@ func (m *JWTMiddleware) Middleware(skipPrefixes []string) func(http.Handler) htt
 
 			r.Header.Set("X-User-ID", claims.UserID)
 			r.Header.Set("X-User-Role", claims.Role)
+			r.Header.Set("X-User-Email", claims.Email)
 
 			next.ServeHTTP(w, r)
 		})

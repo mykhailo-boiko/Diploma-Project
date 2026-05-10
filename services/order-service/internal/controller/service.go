@@ -7,6 +7,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/haradrim/chainorchestra/internal/pkg/audit"
 	natspkg "github.com/haradrim/chainorchestra/internal/pkg/nats"
 	"github.com/haradrim/chainorchestra/internal/pkg/pagination"
 	"github.com/haradrim/chainorchestra/services/order-service/internal/order"
@@ -15,11 +16,12 @@ import (
 type Service struct {
 	storage order.Storage
 	nc      *natspkg.Client
+	audit   *audit.Logger
 	log     *zap.Logger
 }
 
-func NewService(storage order.Storage, nc *natspkg.Client, log *zap.Logger) *Service {
-	return &Service{storage: storage, nc: nc, log: log}
+func NewService(storage order.Storage, nc *natspkg.Client, auditLog *audit.Logger, log *zap.Logger) *Service {
+	return &Service{storage: storage, nc: nc, audit: auditLog, log: log}
 }
 
 type CreateOrderRequest struct {
@@ -64,6 +66,14 @@ func (s *Service) CreateOrder(ctx context.Context, req CreateOrderRequest) (orde
 	}
 
 	s.publishOrderCreated(created)
+	s.audit.Log(ctx, audit.Entry{
+		Action:       "orders.create",
+		EntityType:   "order",
+		EntityIDs:    []string{created.ID},
+		Params:       map[string]any{"customer_name": created.CustomerName, "total_amount": created.TotalAmount, "items_count": len(created.Items)},
+		ResultStatus: audit.StatusSuccess,
+		SuccessCount: 1,
+	})
 
 	return created, nil
 }
@@ -92,6 +102,14 @@ func (s *Service) UpdateOrderStatus(ctx context.Context, id string, newStatus or
 	}
 
 	s.publishOrderStatusChanged(updated, current.Status)
+	s.audit.Log(ctx, audit.Entry{
+		Action:       "orders.update_status",
+		EntityType:   "order",
+		EntityIDs:    []string{id},
+		Params:       map[string]any{"old_status": current.Status, "new_status": newStatus},
+		ResultStatus: audit.StatusSuccess,
+		SuccessCount: 1,
+	})
 
 	return updated, nil
 }
@@ -112,6 +130,14 @@ func (s *Service) CancelOrder(ctx context.Context, id string, reason string) (or
 	}
 
 	s.publishOrderCancelled(cancelled, reason)
+	s.audit.Log(ctx, audit.Entry{
+		Action:       "orders.cancel",
+		EntityType:   "order",
+		EntityIDs:    []string{id},
+		Params:       map[string]any{"reason": reason, "previous_status": current.Status},
+		ResultStatus: audit.StatusSuccess,
+		SuccessCount: 1,
+	})
 
 	return cancelled, nil
 }
@@ -135,16 +161,40 @@ func (s *Service) GetCustomerSummary(ctx context.Context, filter order.CustomerF
 func (s *Service) BulkUpdateStatus(ctx context.Context, orderIDs []string, newStatus order.Status, note string, dryRun bool) (order.BulkStatusResult, error) {
 	result, err := s.storage.BulkUpdateStatus(ctx, orderIDs, newStatus, note, dryRun)
 	if err != nil {
+		s.audit.Log(ctx, audit.Entry{
+			Action:       "orders.bulk_update_status",
+			EntityType:   "order",
+			EntityIDs:    orderIDs,
+			Params:       map[string]any{"status": newStatus, "note": note, "dry_run": dryRun},
+			ResultStatus: audit.StatusFailed,
+			ErrorMessage: err.Error(),
+		})
 		return order.BulkStatusResult{}, err
 	}
-	if dryRun {
-		return result, nil
-	}
-	for _, item := range result.Successes {
-		ord, getErr := s.storage.GetOrderByID(ctx, item.OrderID)
-		if getErr == nil {
-			s.publishOrderStatusChanged(ord, item.OldStatus)
+	if !dryRun {
+		for _, item := range result.Successes {
+			ord, getErr := s.storage.GetOrderByID(ctx, item.OrderID)
+			if getErr == nil {
+				s.publishOrderStatusChanged(ord, item.OldStatus)
+			}
 		}
+	}
+	status := audit.StatusSuccess
+	if len(result.Failures) > 0 && len(result.Successes) > 0 {
+		status = audit.StatusPartial
+	} else if len(result.Successes) == 0 {
+		status = audit.StatusFailed
+	}
+	if !dryRun {
+		s.audit.Log(ctx, audit.Entry{
+			Action:       "orders.bulk_update_status",
+			EntityType:   "order",
+			EntityIDs:    result.UpdatedIDs,
+			Params:       map[string]any{"status": newStatus, "note": note, "total": result.Total},
+			ResultStatus: status,
+			SuccessCount: len(result.Successes),
+			FailureCount: len(result.Failures),
+		})
 	}
 	return result, nil
 }

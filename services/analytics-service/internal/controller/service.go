@@ -407,6 +407,10 @@ func (s *Service) GetCustomerProfile360(ctx context.Context, customerName string
 	return s.storage.GetCustomerProfile360(ctx, customerName, recentN, topCategoriesN)
 }
 
+func (s *Service) QueryAuditLog(ctx context.Context, filter analytics.AuditFilter) ([]analytics.AuditEntry, error) {
+	return s.storage.QueryAuditLog(ctx, filter)
+}
+
 func (s *Service) GetPeriodComparison(
 	ctx context.Context, metric string,
 	aFrom, aTo, bFrom, bTo time.Time,

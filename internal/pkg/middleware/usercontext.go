@@ -6,11 +6,13 @@ import (
 )
 
 const (
-	userIDHeader  = "X-User-ID"
-	userRoleHeader = "X-User-Role"
+	userIDHeader    = "X-User-ID"
+	userRoleHeader  = "X-User-Role"
+	userEmailHeader = "X-User-Email"
 
-	userIDKey   contextKey = "user_id"
-	userRoleKey contextKey = "user_role"
+	userIDKey    contextKey = "user_id"
+	userRoleKey  contextKey = "user_role"
+	userEmailKey contextKey = "user_email"
 )
 
 func UserContext(next http.Handler) http.Handler {
@@ -22,6 +24,9 @@ func UserContext(next http.Handler) http.Handler {
 		}
 		if role := r.Header.Get(userRoleHeader); role != "" {
 			ctx = context.WithValue(ctx, userRoleKey, role)
+		}
+		if email := r.Header.Get(userEmailHeader); email != "" {
+			ctx = context.WithValue(ctx, userEmailKey, email)
 		}
 
 		next.ServeHTTP(w, r.WithContext(ctx))
@@ -36,6 +41,11 @@ func GetUserID(ctx context.Context) string {
 func GetUserRole(ctx context.Context) string {
 	role, _ := ctx.Value(userRoleKey).(string)
 	return role
+}
+
+func GetUserEmail(ctx context.Context) string {
+	email, _ := ctx.Value(userEmailKey).(string)
+	return email
 }
 
 func WithUserContext(ctx context.Context, userID, role string) context.Context {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -183,6 +184,75 @@ func (s *PostgresStorage) GetInventorySnapshots(ctx context.Context, from, to ti
 		results = append(results, r)
 	}
 
+	return results, nil
+}
+
+func (s *PostgresStorage) QueryAuditLog(ctx context.Context, f AuditFilter) ([]AuditEntry, error) {
+	limit := f.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 500 {
+		limit = 500
+	}
+
+	conds := []string{"1=1"}
+	args := []any{}
+	if f.ActorEmail != "" {
+		args = append(args, f.ActorEmail)
+		conds = append(conds, fmt.Sprintf("actor_email = $%d", len(args)))
+	}
+	if f.Action != "" {
+		args = append(args, f.Action)
+		conds = append(conds, fmt.Sprintf("action = $%d", len(args)))
+	}
+	if f.EntityID != "" {
+		args = append(args, f.EntityID)
+		conds = append(conds, fmt.Sprintf("$%d = ANY(entity_ids)", len(args)))
+	}
+	if f.From != nil {
+		args = append(args, *f.From)
+		conds = append(conds, fmt.Sprintf("created_at >= $%d", len(args)))
+	}
+	if f.To != nil {
+		args = append(args, *f.To)
+		conds = append(conds, fmt.Sprintf("created_at <= $%d", len(args)))
+	}
+	args = append(args, limit)
+
+	query := fmt.Sprintf(`
+		SELECT id::text, actor_user_id, actor_email, actor_role, service_name, action,
+			COALESCE(entity_type,''), COALESCE(entity_ids,'{}'),
+			COALESCE(params_snip,''), result_status,
+			success_count, failure_count, COALESCE(error_message,''), created_at
+		FROM audit.action_log
+		WHERE %s
+		ORDER BY created_at DESC
+		LIMIT $%d`,
+		strings.Join(conds, " AND "), len(args),
+	)
+
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query audit log: %w", err)
+	}
+	defer rows.Close()
+
+	var results []AuditEntry
+	for rows.Next() {
+		var e AuditEntry
+		if err := rows.Scan(&e.ID, &e.ActorUserID, &e.ActorEmail, &e.ActorRole,
+			&e.ServiceName, &e.Action, &e.EntityType, &e.EntityIDs,
+			&e.ParamsSnip, &e.ResultStatus,
+			&e.SuccessCount, &e.FailureCount, &e.ErrorMessage, &e.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan audit entry: %w", err)
+		}
+		results = append(results, e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate audit log: %w", err)
+	}
 	return results, nil
 }
 

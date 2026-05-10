@@ -11,6 +11,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/haradrim/chainorchestra/internal/pkg/audit"
 	natspkg "github.com/haradrim/chainorchestra/internal/pkg/nats"
 	"github.com/haradrim/chainorchestra/internal/pkg/postgres"
 	"github.com/haradrim/chainorchestra/services/logistics-service/internal/carrier"
@@ -52,7 +53,8 @@ func main() {
 
 	shipmentStorage := shipment.NewPostgresStorage(pool)
 	carrierStorage := carrier.NewPostgresStorage(pool)
-	svc := controller.NewService(shipmentStorage, carrierStorage, nc, log.Named("service"))
+	auditLogger := audit.New(pool, "logistics-service", log)
+	svc := controller.NewService(shipmentStorage, carrierStorage, nc, auditLogger, log.Named("service"))
 
 	cons := consumer.NewConsumer(svc, nc, log.Named("consumer"))
 	if err := cons.Start(); err != nil {

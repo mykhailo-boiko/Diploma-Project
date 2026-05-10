@@ -5,6 +5,7 @@ CREATE SCHEMA IF NOT EXISTS inventory;
 CREATE SCHEMA IF NOT EXISTS logistics;
 CREATE SCHEMA IF NOT EXISTS analytics;
 CREATE SCHEMA IF NOT EXISTS notifications;
+CREATE SCHEMA IF NOT EXISTS audit;
 
 CREATE USER user_service WITH PASSWORD 'user_service_pass';
 CREATE USER order_service WITH PASSWORD 'order_service_pass';
@@ -12,6 +13,7 @@ CREATE USER inventory_service WITH PASSWORD 'inventory_service_pass';
 CREATE USER logistics_service WITH PASSWORD 'logistics_service_pass';
 CREATE USER analytics_service WITH PASSWORD 'analytics_service_pass';
 CREATE USER notification_service WITH PASSWORD 'notification_service_pass';
+CREATE USER audit_service WITH PASSWORD 'audit_service_pass';
 
 GRANT USAGE ON SCHEMA users TO user_service;
 GRANT CREATE ON SCHEMA users TO user_service;
@@ -42,6 +44,19 @@ GRANT USAGE ON SCHEMA notifications TO notification_service;
 GRANT CREATE ON SCHEMA notifications TO notification_service;
 ALTER DEFAULT PRIVILEGES IN SCHEMA notifications GRANT ALL ON TABLES TO notification_service;
 ALTER DEFAULT PRIVILEGES IN SCHEMA notifications GRANT ALL ON SEQUENCES TO notification_service;
+
+GRANT USAGE ON SCHEMA audit TO audit_service;
+GRANT CREATE ON SCHEMA audit TO audit_service;
+ALTER DEFAULT PRIVILEGES IN SCHEMA audit GRANT ALL ON TABLES TO audit_service;
+ALTER DEFAULT PRIVILEGES IN SCHEMA audit GRANT ALL ON SEQUENCES TO audit_service;
+
+GRANT USAGE ON SCHEMA audit TO order_service, logistics_service, notification_service, inventory_service;
+ALTER DEFAULT PRIVILEGES FOR USER audit_service IN SCHEMA audit
+  GRANT INSERT ON TABLES TO order_service, logistics_service, notification_service, inventory_service;
+
+GRANT USAGE ON SCHEMA audit TO analytics_service;
+ALTER DEFAULT PRIVILEGES FOR USER audit_service IN SCHEMA audit
+  GRANT SELECT ON TABLES TO analytics_service;
 
 GRANT USAGE ON SCHEMA users TO analytics_service;
 GRANT USAGE ON SCHEMA orders TO analytics_service;

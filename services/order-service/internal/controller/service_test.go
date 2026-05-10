@@ -150,7 +150,7 @@ func (m *mockStorage) BulkUpdateStatus(_ context.Context, ids []string, _ order.
 
 func newTestService() (*Service, *mockStorage) {
 	storage := newMockStorage()
-	return NewService(storage, nil, zap.NewNop()), storage
+	return NewService(storage, nil, nil, zap.NewNop()), storage
 }
 
 func TestCreateOrder(t *testing.T) {

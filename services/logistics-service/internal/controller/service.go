@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
+	"github.com/haradrim/chainorchestra/internal/pkg/audit"
 	natspkg "github.com/haradrim/chainorchestra/internal/pkg/nats"
 	"github.com/haradrim/chainorchestra/internal/pkg/pagination"
 	"github.com/haradrim/chainorchestra/services/logistics-service/internal/carrier"
@@ -21,11 +22,12 @@ type Service struct {
 	shipments shipment.Storage
 	carriers  carrier.Storage
 	nc        *natspkg.Client
+	audit     *audit.Logger
 	log       *zap.Logger
 }
 
-func NewService(shipments shipment.Storage, carriers carrier.Storage, nc *natspkg.Client, log *zap.Logger) *Service {
-	return &Service{shipments: shipments, carriers: carriers, nc: nc, log: log}
+func NewService(shipments shipment.Storage, carriers carrier.Storage, nc *natspkg.Client, auditLog *audit.Logger, log *zap.Logger) *Service {
+	return &Service{shipments: shipments, carriers: carriers, nc: nc, audit: auditLog, log: log}
 }
 
 type CreateShipmentRequest struct {
@@ -157,6 +159,13 @@ func (s *Service) ListCarriers(ctx context.Context, filter carrier.Filter, sort 
 func (s *Service) ReassignCarrierByCity(ctx context.Context, fromCarrierID, toCarrierID, city string, statuses []shipment.Status, dryRun bool) (shipment.ReassignResult, error) {
 	result, err := s.shipments.ReassignCarrierByCity(ctx, fromCarrierID, toCarrierID, city, statuses, dryRun)
 	if err != nil {
+		s.audit.Log(ctx, audit.Entry{
+			Action:       "shipments.reassign_carrier",
+			EntityType:   "shipment",
+			Params:       map[string]any{"from": fromCarrierID, "to": toCarrierID, "city": city, "dry_run": dryRun},
+			ResultStatus: audit.StatusFailed,
+			ErrorMessage: err.Error(),
+		})
 		return shipment.ReassignResult{}, err
 	}
 	if from, ferr := s.carriers.GetCarrierByID(ctx, fromCarrierID); ferr == nil {
@@ -164,6 +173,23 @@ func (s *Service) ReassignCarrierByCity(ctx context.Context, fromCarrierID, toCa
 	}
 	if to, terr := s.carriers.GetCarrierByID(ctx, toCarrierID); terr == nil {
 		result.ToCarrierName = to.Name
+	}
+	if !dryRun {
+		s.audit.Log(ctx, audit.Entry{
+			Action:     "shipments.reassign_carrier",
+			EntityType: "shipment",
+			EntityIDs:  result.ReassignedIDs,
+			Params: map[string]any{
+				"from_carrier_id":   fromCarrierID,
+				"to_carrier_id":     toCarrierID,
+				"from_carrier_name": result.FromCarrierName,
+				"to_carrier_name":   result.ToCarrierName,
+				"city":              city,
+				"total":             result.Total,
+			},
+			ResultStatus: audit.StatusSuccess,
+			SuccessCount: result.Total,
+		})
 	}
 	return result, nil
 }
@@ -185,6 +211,15 @@ func (s *Service) UpdateCarrier(ctx context.Context, id string, req UpdateCarrie
 	if err != nil {
 		return carrier.Carrier{}, fmt.Errorf("failed to update carrier: %w", err)
 	}
+
+	s.audit.Log(ctx, audit.Entry{
+		Action:       "carriers.update",
+		EntityType:   "carrier",
+		EntityIDs:    []string{id},
+		Params:       map[string]any{"name": req.Name, "is_active": req.IsActive, "cost_per_km": req.CostPerKm},
+		ResultStatus: audit.StatusSuccess,
+		SuccessCount: 1,
+	})
 
 	return updated, nil
 }

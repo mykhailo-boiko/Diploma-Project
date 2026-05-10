@@ -119,6 +119,10 @@ func (m *mockStorage) GetMetricValue(_ context.Context, _ string, _, _ time.Time
 	return 0, nil
 }
 
+func (m *mockStorage) QueryAuditLog(_ context.Context, _ analytics.AuditFilter) ([]analytics.AuditEntry, error) {
+	return []analytics.AuditEntry{}, nil
+}
+
 func (m *mockStorage) GetCarrierPerformance(_ context.Context, _, _ time.Time, _ int, _ int) ([]analytics.CarrierPerformance, error) {
 	return []analytics.CarrierPerformance{}, nil
 }
