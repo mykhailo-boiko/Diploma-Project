@@ -66,9 +66,20 @@ var (
 	ErrInvalidTransition = errors.New("invalid status transition")
 )
 
+type ReassignResult struct {
+	Total           int      `json:"total"`
+	ReassignedIDs   []string `json:"reassigned_ids"`
+	FromCarrierID   string   `json:"from_carrier_id"`
+	ToCarrierID     string   `json:"to_carrier_id"`
+	FromCarrierName string   `json:"from_carrier_name,omitempty"`
+	ToCarrierName   string   `json:"to_carrier_name,omitempty"`
+	City            string   `json:"city,omitempty"`
+}
+
 type Storage interface {
 	CreateShipment(ctx context.Context, s Shipment) (Shipment, error)
 	GetShipmentByID(ctx context.Context, id string) (Shipment, error)
 	ListShipments(ctx context.Context, filter Filter, sort pagination.Sort, page pagination.Page) ([]Shipment, int, error)
 	UpdateShipmentStatus(ctx context.Context, id string, status Status) (Shipment, error)
+	ReassignCarrierByCity(ctx context.Context, fromCarrierID, toCarrierID, city string, statuses []Status) (ReassignResult, error)
 }

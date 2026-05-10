@@ -359,8 +359,8 @@ func TestController_CalculateRoute_Success(t *testing.T) {
 	}
 
 	body, _ := json.Marshal(CalculateRouteRequest{
-		Origin:      "Moscow",
-		Destination: "SPb",
+		Origin:      "Kyiv",
+		Destination: "Lviv",
 		CarrierID:   c.ID,
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/routes/calculate", bytes.NewReader(body))
@@ -380,9 +380,9 @@ func TestController_CalculateRoute_MissingFields(t *testing.T) {
 		name string
 		req  CalculateRouteRequest
 	}{
-		{name: "missing origin", req: CalculateRouteRequest{Destination: "SPb", CarrierID: "c1"}},
-		{name: "missing destination", req: CalculateRouteRequest{Origin: "Moscow", CarrierID: "c1"}},
-		{name: "missing carrier_id", req: CalculateRouteRequest{Origin: "Moscow", Destination: "SPb"}},
+		{name: "missing origin", req: CalculateRouteRequest{Destination: "Lviv", CarrierID: "c1"}},
+		{name: "missing destination", req: CalculateRouteRequest{Origin: "Kyiv", CarrierID: "c1"}},
+		{name: "missing carrier_id", req: CalculateRouteRequest{Origin: "Kyiv", Destination: "Lviv"}},
 	}
 
 	for _, tt := range tests {
@@ -404,8 +404,8 @@ func TestController_CalculateRoute_CarrierNotFound(t *testing.T) {
 	ctrl, _ := setupController()
 
 	body, _ := json.Marshal(CalculateRouteRequest{
-		Origin:      "Moscow",
-		Destination: "SPb",
+		Origin:      "Kyiv",
+		Destination: "Lviv",
 		CarrierID:   "nonexistent",
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/routes/calculate", bytes.NewReader(body))

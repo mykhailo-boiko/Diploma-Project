@@ -24,6 +24,7 @@ func newRouter(ctrl *controller.LogisticsController, nc *natspkg.Client) http.Ha
 	mux.HandleFunc("GET /health/nats", nc.HealthHandler())
 
 	mux.HandleFunc("POST /api/v1/shipments/bulk-status", ctrl.BulkUpdateShipmentStatus)
+	mux.HandleFunc("POST /api/v1/shipments/reassign-carrier", ctrl.ReassignCarrier)
 	mux.HandleFunc("POST /api/v1/shipments", ctrl.CreateShipment)
 	mux.HandleFunc("GET /api/v1/shipments", ctrl.ListShipments)
 	mux.HandleFunc("GET /api/v1/shipments/{id}", ctrl.GetShipmentByID)

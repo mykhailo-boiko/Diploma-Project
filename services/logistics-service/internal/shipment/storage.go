@@ -127,6 +127,57 @@ func (s *PostgresStorage) UpdateShipmentStatus(ctx context.Context, id string, s
 	return sh, nil
 }
 
+func (s *PostgresStorage) ReassignCarrierByCity(ctx context.Context, fromCarrierID, toCarrierID, city string, statuses []Status) (ReassignResult, error) {
+	res := ReassignResult{
+		FromCarrierID: fromCarrierID,
+		ToCarrierID:   toCarrierID,
+		City:          city,
+		ReassignedIDs: []string{},
+	}
+
+	if len(statuses) == 0 {
+		statuses = []Status{StatusCreated, StatusPickedUp, StatusInTransit}
+	}
+	statusStrings := make([]string, 0, len(statuses))
+	for _, st := range statuses {
+		statusStrings = append(statusStrings, string(st))
+	}
+
+	query := `
+		UPDATE logistics.shipment
+		SET carrier_id = $2, updated_at = $3
+		WHERE deleted_at IS NULL
+			AND carrier_id = $1
+			AND status = ANY($4)`
+	args := []any{fromCarrierID, toCarrierID, time.Now().UTC(), statusStrings}
+
+	if city != "" {
+		query += " AND trim(split_part(address, ',', 3)) ILIKE $5"
+		args = append(args, city)
+	}
+
+	query += " RETURNING id::text"
+
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return res, fmt.Errorf("failed to reassign carrier: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return res, fmt.Errorf("failed to scan reassigned id: %w", err)
+		}
+		res.ReassignedIDs = append(res.ReassignedIDs, id)
+	}
+	if err := rows.Err(); err != nil {
+		return res, fmt.Errorf("failed to iterate reassigned ids: %w", err)
+	}
+	res.Total = len(res.ReassignedIDs)
+	return res, nil
+}
+
 func buildShipmentWhereClause(filter Filter) (string, []any) {
 	var conditions []string
 	var args []any

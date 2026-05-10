@@ -78,6 +78,10 @@ func (m *mockShipmentStorage) UpdateShipmentStatus(_ context.Context, id string,
 	return s, nil
 }
 
+func (m *mockShipmentStorage) ReassignCarrierByCity(_ context.Context, _, _, _ string, _ []shipment.Status) (shipment.ReassignResult, error) {
+	return shipment.ReassignResult{}, nil
+}
+
 type mockCarrierStorage struct {
 	mu       sync.Mutex
 	carriers map[string]carrier.Carrier
@@ -404,19 +408,19 @@ func TestCalculateRoute(t *testing.T) {
 	c := createTestCarrier(t, svc)
 
 	result, err := svc.CalculateRoute(t.Context(), CalculateRouteRequest{
-		Origin:      "Moscow",
-		Destination: "SPb",
+		Origin:      "Kyiv",
+		Destination: "Lviv",
 		CarrierID:   c.ID,
 	})
 	if err != nil {
 		t.Fatalf("CalculateRoute failed: %v", err)
 	}
 
-	if result.Origin != "Moscow" {
-		t.Errorf("expected origin Moscow, got %q", result.Origin)
+	if result.Origin != "Kyiv" {
+		t.Errorf("expected origin Kyiv, got %q", result.Origin)
 	}
-	if result.Destination != "SPb" {
-		t.Errorf("expected destination SPb, got %q", result.Destination)
+	if result.Destination != "Lviv" {
+		t.Errorf("expected destination Lviv, got %q", result.Destination)
 	}
 	if result.DistanceKm <= 0 {
 		t.Error("expected positive distance")
@@ -429,8 +433,8 @@ func TestCalculateRoute(t *testing.T) {
 	}
 
 	result2, err := svc.CalculateRoute(t.Context(), CalculateRouteRequest{
-		Origin:      "Moscow",
-		Destination: "SPb",
+		Origin:      "Kyiv",
+		Destination: "Lviv",
 		CarrierID:   c.ID,
 	})
 	if err != nil {
@@ -448,8 +452,8 @@ func TestCalculateRoute_CarrierNotFound(t *testing.T) {
 	svc, _, _ := newTestService()
 
 	_, err := svc.CalculateRoute(t.Context(), CalculateRouteRequest{
-		Origin:      "Moscow",
-		Destination: "SPb",
+		Origin:      "Kyiv",
+		Destination: "Lviv",
 		CarrierID:   "nonexistent",
 	})
 	if err == nil {
