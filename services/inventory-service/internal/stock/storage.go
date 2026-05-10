@@ -322,9 +322,10 @@ func (s *PostgresStorage) ListLowStock(ctx context.Context, page pagination.Page
 	}
 
 	query := `
-		SELECT s.id, s.product_id, s.warehouse_id, s.quantity, s.reserved, (s.quantity - s.reserved) AS available, s.min_threshold, s.updated_at, p.name, p.sku
+		SELECT s.id, s.product_id, s.warehouse_id, s.quantity, s.reserved, (s.quantity - s.reserved) AS available, s.min_threshold, s.updated_at, p.name, p.sku, w.name
 		FROM inventory.stock s
 		JOIN inventory.product p ON p.id = s.product_id AND p.deleted_at IS NULL
+		JOIN inventory.warehouse w ON w.id = s.warehouse_id
 		WHERE s.min_threshold > 0 AND (s.quantity - s.reserved) < s.min_threshold
 		ORDER BY (s.quantity - s.reserved) ASC
 		LIMIT $1 OFFSET $2`
@@ -340,7 +341,7 @@ func (s *PostgresStorage) ListLowStock(ctx context.Context, page pagination.Page
 		var item LowStockItem
 		if err := rows.Scan(
 			&item.ID, &item.ProductID, &item.WarehouseID, &item.Quantity, &item.Reserved,
-			&item.Available, &item.MinThreshold, &item.UpdatedAt, &item.ProductName, &item.ProductSKU,
+			&item.Available, &item.MinThreshold, &item.UpdatedAt, &item.ProductName, &item.ProductSKU, &item.WarehouseName,
 		); err != nil {
 			return nil, 0, fmt.Errorf("failed to scan low stock item: %w", err)
 		}

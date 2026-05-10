@@ -54,8 +54,9 @@ type MovementFilter struct {
 
 type LowStockItem struct {
 	Stock
-	ProductName string `json:"product_name"`
-	ProductSKU  string `json:"product_sku"`
+	ProductName   string `json:"product_name"`
+	ProductSKU    string `json:"product_sku"`
+	WarehouseName string `json:"warehouse_name"`
 }
 
 type InventoryReport struct {
