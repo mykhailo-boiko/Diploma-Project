@@ -27,8 +27,11 @@ func newRouter(orderCtrl *controller.OrderController, nc *natspkg.Client) http.H
 	mux.HandleFunc("GET /api/v1/orders", orderCtrl.List)
 	mux.HandleFunc("GET /api/v1/orders/search", orderCtrl.Search)
 	mux.HandleFunc("GET /api/v1/orders/stats", orderCtrl.Stats)
+	mux.HandleFunc("GET /api/v1/orders/sales-by-product", orderCtrl.SalesByProduct)
+	mux.HandleFunc("GET /api/v1/orders/customers", orderCtrl.CustomerSummary)
 	mux.HandleFunc("GET /api/v1/orders/{id}", orderCtrl.GetByID)
 	mux.HandleFunc("PUT /api/v1/orders/{id}/status", orderCtrl.UpdateStatus)
+	mux.HandleFunc("POST /api/v1/orders/bulk-status", orderCtrl.BulkUpdateStatus)
 	mux.HandleFunc("POST /api/v1/orders/{id}/cancel", orderCtrl.Cancel)
 
 	return handler

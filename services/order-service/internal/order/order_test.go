@@ -17,6 +17,7 @@ func TestCanTransition_Valid(t *testing.T) {
 		{name: "shipped to returned", from: StatusShipped, to: StatusReturned},
 		{name: "shipped to cancelled", from: StatusShipped, to: StatusCancelled},
 		{name: "delivered to completed", from: StatusDelivered, to: StatusCompleted},
+		{name: "processing to confirmed (rollback for review)", from: StatusProcessing, to: StatusConfirmed},
 	}
 
 	for _, tt := range tests {
@@ -39,7 +40,6 @@ func TestCanTransition_Invalid(t *testing.T) {
 		{name: "confirmed to delivered", from: StatusConfirmed, to: StatusDelivered},
 		{name: "completed to pending", from: StatusCompleted, to: StatusPending},
 		{name: "cancelled to pending", from: StatusCancelled, to: StatusPending},
-		{name: "processing to confirmed", from: StatusProcessing, to: StatusConfirmed},
 		{name: "pending to returned", from: StatusPending, to: StatusReturned},
 		{name: "returned to pending", from: StatusReturned, to: StatusPending},
 	}

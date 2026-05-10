@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"go.uber.org/zap"
 
@@ -121,6 +122,28 @@ func (s *Service) SearchOrders(ctx context.Context, query string, page paginatio
 
 func (s *Service) GetOrderStats(ctx context.Context) (order.OrderStats, error) {
 	return s.storage.GetOrderStats(ctx)
+}
+
+func (s *Service) GetSalesByProduct(ctx context.Context, from, to time.Time, includeStatuses []order.Status) ([]order.ProductSales, error) {
+	return s.storage.GetSalesByProduct(ctx, from, to, includeStatuses)
+}
+
+func (s *Service) GetCustomerSummary(ctx context.Context, filter order.CustomerFilter) ([]order.CustomerSummary, error) {
+	return s.storage.GetCustomerSummary(ctx, filter)
+}
+
+func (s *Service) BulkUpdateStatus(ctx context.Context, orderIDs []string, newStatus order.Status, note string) (order.BulkStatusResult, error) {
+	result, err := s.storage.BulkUpdateStatus(ctx, orderIDs, newStatus, note)
+	if err != nil {
+		return order.BulkStatusResult{}, err
+	}
+	for _, item := range result.Successes {
+		ord, getErr := s.storage.GetOrderByID(ctx, item.OrderID)
+		if getErr == nil {
+			s.publishOrderStatusChanged(ord, item.OldStatus)
+		}
+	}
+	return result, nil
 }
 
 

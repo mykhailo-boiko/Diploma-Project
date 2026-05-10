@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"go.uber.org/zap"
 
@@ -133,6 +134,18 @@ func (m *mockStorage) GetOrderStats(_ context.Context) (order.OrderStats, error)
 	}
 
 	return stats, nil
+}
+
+func (m *mockStorage) GetSalesByProduct(_ context.Context, _, _ time.Time, _ []order.Status) ([]order.ProductSales, error) {
+	return []order.ProductSales{}, nil
+}
+
+func (m *mockStorage) GetCustomerSummary(_ context.Context, _ order.CustomerFilter) ([]order.CustomerSummary, error) {
+	return []order.CustomerSummary{}, nil
+}
+
+func (m *mockStorage) BulkUpdateStatus(_ context.Context, ids []string, _ order.Status, _ string) (order.BulkStatusResult, error) {
+	return order.BulkStatusResult{Total: len(ids)}, nil
 }
 
 func newTestService() (*Service, *mockStorage) {

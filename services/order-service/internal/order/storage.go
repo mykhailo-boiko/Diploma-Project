@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -304,6 +305,257 @@ func (s *PostgresStorage) GetOrderStats(ctx context.Context) (OrderStats, error)
 	}
 
 	return stats, nil
+}
+
+func (s *PostgresStorage) GetSalesByProduct(ctx context.Context, from, to time.Time, includeStatuses []Status) ([]ProductSales, error) {
+	if len(includeStatuses) == 0 {
+		includeStatuses = []Status{
+			StatusConfirmed, StatusProcessing, StatusShipped,
+			StatusDelivered, StatusCompleted,
+		}
+	}
+
+	statusStrings := make([]string, 0, len(includeStatuses))
+	for _, s := range includeStatuses {
+		statusStrings = append(statusStrings, string(s))
+	}
+
+	query := `
+		SELECT
+			oi.product_id,
+			MAX(oi.name) AS name,
+			SUM(oi.quantity)::int AS units_sold,
+			SUM(oi.subtotal)::float8 AS revenue,
+			COUNT(DISTINCT oi.order_id)::int AS order_count
+		FROM orders.order_items oi
+		JOIN orders.orders o ON o.id = oi.order_id
+		WHERE o.deleted_at IS NULL
+			AND o.created_at >= $1
+			AND o.created_at <= $2
+			AND o.status = ANY($3)
+		GROUP BY oi.product_id
+		ORDER BY revenue DESC`
+
+	rows, err := s.pool.Query(ctx, query, from, to, statusStrings)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query sales by product: %w", err)
+	}
+	defer rows.Close()
+
+	days := to.Sub(from).Hours() / 24
+	if days < 1 {
+		days = 1
+	}
+
+	var results []ProductSales
+	for rows.Next() {
+		var ps ProductSales
+		if err := rows.Scan(&ps.ProductID, &ps.Name, &ps.UnitsSold, &ps.Revenue, &ps.OrderCount); err != nil {
+			return nil, fmt.Errorf("failed to scan sales by product: %w", err)
+		}
+		ps.DailyDemand = float64(ps.UnitsSold) / days
+		results = append(results, ps)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate sales by product: %w", err)
+	}
+
+	return results, nil
+}
+
+func (s *PostgresStorage) BulkUpdateStatus(ctx context.Context, orderIDs []string, newStatus Status, note string) (BulkStatusResult, error) {
+	result := BulkStatusResult{
+		Total:      len(orderIDs),
+		UpdatedIDs: make([]string, 0, len(orderIDs)),
+		Successes:  make([]BulkStatusItem, 0, len(orderIDs)),
+		Failures:   make([]BulkStatusItem, 0),
+	}
+	if len(orderIDs) == 0 {
+		return result, nil
+	}
+
+	rows, err := s.pool.Query(ctx,
+		`SELECT id::text, status FROM orders.orders WHERE id::text = ANY($1) AND deleted_at IS NULL`,
+		orderIDs,
+	)
+	if err != nil {
+		return result, fmt.Errorf("failed to load orders for bulk update: %w", err)
+	}
+
+	currentStatus := make(map[string]Status, len(orderIDs))
+	for rows.Next() {
+		var id string
+		var st Status
+		if err := rows.Scan(&id, &st); err != nil {
+			rows.Close()
+			return result, fmt.Errorf("failed to scan order: %w", err)
+		}
+		currentStatus[id] = st
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return result, fmt.Errorf("failed to iterate orders: %w", err)
+	}
+
+	now := time.Now().UTC()
+	noteValue := strings.TrimSpace(note)
+	for _, id := range orderIDs {
+		from, found := currentStatus[id]
+		if !found {
+			result.Failures = append(result.Failures, BulkStatusItem{
+				OrderID: id, Error: ErrOrderNotFound.Error(),
+			})
+			continue
+		}
+		if !CanTransition(from, newStatus) {
+			result.Failures = append(result.Failures, BulkStatusItem{
+				OrderID: id, OldStatus: from, NewStatus: newStatus,
+				Error: fmt.Sprintf("invalid transition: %s -> %s", from, newStatus),
+			})
+			continue
+		}
+
+		var execErr error
+		if noteValue != "" {
+			_, execErr = s.pool.Exec(ctx,
+				`UPDATE orders.orders SET status = $1, cancel_reason = $2, updated_at = $3
+				 WHERE id::text = $4 AND deleted_at IS NULL`,
+				string(newStatus), noteValue, now, id,
+			)
+		} else {
+			_, execErr = s.pool.Exec(ctx,
+				`UPDATE orders.orders SET status = $1, updated_at = $2
+				 WHERE id::text = $3 AND deleted_at IS NULL`,
+				string(newStatus), now, id,
+			)
+		}
+		if execErr != nil {
+			result.Failures = append(result.Failures, BulkStatusItem{
+				OrderID: id, OldStatus: from, NewStatus: newStatus,
+				Error: execErr.Error(),
+			})
+			continue
+		}
+
+		result.Successes = append(result.Successes, BulkStatusItem{
+			OrderID: id, OldStatus: from, NewStatus: newStatus,
+		})
+		result.UpdatedIDs = append(result.UpdatedIDs, id)
+	}
+
+	return result, nil
+}
+
+func (s *PostgresStorage) GetCustomerSummary(ctx context.Context, filter CustomerFilter) ([]CustomerSummary, error) {
+	hasWindow := filter.WindowFrom != nil && filter.WindowTo != nil
+
+	var args []any
+	var windowFromExpr, windowToExpr string
+	if hasWindow {
+		args = append(args, *filter.WindowFrom, *filter.WindowTo)
+		windowFromExpr = "$1"
+		windowToExpr = "$2"
+	}
+
+	query := fmt.Sprintf(`
+		SELECT
+			customer_name,
+			MIN(created_at) AS first_order_date,
+			MAX(created_at) AS last_order_date,
+			COUNT(*)::int AS total_orders,
+			COALESCE(SUM(total_amount), 0)::float8 AS total_revenue,
+			%s AS orders_in_window,
+			%s AS revenue_in_window
+		FROM orders.orders
+		WHERE deleted_at IS NULL
+			AND status NOT IN ('cancelled','returned')
+		GROUP BY customer_name`,
+		ifElse(hasWindow,
+			fmt.Sprintf("COUNT(*) FILTER (WHERE created_at >= %s AND created_at <= %s)::int", windowFromExpr, windowToExpr),
+			"0::int",
+		),
+		ifElse(hasWindow,
+			fmt.Sprintf("COALESCE(SUM(total_amount) FILTER (WHERE created_at >= %s AND created_at <= %s), 0)::float8", windowFromExpr, windowToExpr),
+			"0::float8",
+		),
+	)
+
+	if hasWindow {
+		query += " HAVING COUNT(*) FILTER (WHERE created_at >= " + windowFromExpr + " AND created_at <= " + windowToExpr + ") > 0"
+	}
+
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query customer summary: %w", err)
+	}
+	defer rows.Close()
+
+	var results []CustomerSummary
+	for rows.Next() {
+		var c CustomerSummary
+		if err := rows.Scan(
+			&c.CustomerName, &c.FirstOrderDate, &c.LastOrderDate,
+			&c.TotalOrders, &c.TotalRevenue,
+			&c.OrdersInWindow, &c.RevenueInWindow,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan customer summary: %w", err)
+		}
+		if c.TotalOrders > 0 {
+			c.AvgOrderValue = c.TotalRevenue / float64(c.TotalOrders)
+		}
+		if hasWindow {
+			c.NewInWindow = !c.FirstOrderDate.Before(*filter.WindowFrom)
+		}
+		results = append(results, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate customer summary: %w", err)
+	}
+
+	if filter.OnlyNew && hasWindow {
+		filtered := results[:0]
+		for _, c := range results {
+			if c.NewInWindow {
+				filtered = append(filtered, c)
+			}
+		}
+		results = filtered
+	}
+
+	sortKey := func(c CustomerSummary) float64 {
+		switch filter.SortBy {
+		case CustomerSortOrders:
+			return float64(c.TotalOrders)
+		case CustomerSortRevenueWindow:
+			return c.RevenueInWindow
+		case CustomerSortLastOrder:
+			return float64(c.LastOrderDate.UnixNano())
+		case CustomerSortFirstOrder:
+			return float64(c.FirstOrderDate.UnixNano())
+		default:
+			return c.TotalRevenue
+		}
+	}
+	sort.Slice(results, func(i, j int) bool {
+		a, b := sortKey(results[i]), sortKey(results[j])
+		if filter.SortDesc {
+			return a > b
+		}
+		return a < b
+	})
+
+	if filter.Limit > 0 && len(results) > filter.Limit {
+		results = results[:filter.Limit]
+	}
+
+	return results, nil
+}
+
+func ifElse(cond bool, a, b string) string {
+	if cond {
+		return a
+	}
+	return b
 }
 
 func (s *PostgresStorage) buildWhereClause(filter Filter) (string, []any) {

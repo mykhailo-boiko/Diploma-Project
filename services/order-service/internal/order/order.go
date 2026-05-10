@@ -24,7 +24,7 @@ const (
 var validTransitions = map[Status][]Status{
 	StatusPending:    {StatusConfirmed, StatusCancelled},
 	StatusConfirmed:  {StatusProcessing, StatusCancelled},
-	StatusProcessing: {StatusShipped, StatusCancelled},
+	StatusProcessing: {StatusConfirmed, StatusShipped, StatusCancelled},
 	StatusShipped:    {StatusDelivered, StatusReturned, StatusCancelled},
 	StatusDelivered:  {StatusCompleted, StatusCancelled},
 }
@@ -83,6 +83,60 @@ type OrderStats struct {
 	ByStatus     []StatusStats `json:"by_status"`
 }
 
+type ProductSales struct {
+	ProductID    string  `json:"product_id"`
+	Name         string  `json:"name"`
+	UnitsSold    int     `json:"units_sold"`
+	Revenue      float64 `json:"revenue"`
+	OrderCount   int     `json:"order_count"`
+	DailyDemand  float64 `json:"daily_demand"`
+}
+
+type BulkStatusItem struct {
+	OrderID   string `json:"order_id"`
+	OldStatus Status `json:"old_status,omitempty"`
+	NewStatus Status `json:"new_status,omitempty"`
+	Error     string `json:"error,omitempty"`
+}
+
+type BulkStatusResult struct {
+	Total      int              `json:"total"`
+	UpdatedIDs []string         `json:"updated_ids"`
+	Successes  []BulkStatusItem `json:"successes"`
+	Failures   []BulkStatusItem `json:"failures"`
+}
+
+type CustomerSummary struct {
+	CustomerName     string    `json:"customer_name"`
+	FirstOrderDate   time.Time `json:"first_order_date"`
+	LastOrderDate    time.Time `json:"last_order_date"`
+	TotalOrders      int       `json:"total_orders"`
+	TotalRevenue     float64   `json:"total_revenue"`
+	AvgOrderValue    float64   `json:"avg_order_value"`
+	OrdersInWindow   int       `json:"orders_in_window,omitempty"`
+	RevenueInWindow  float64   `json:"revenue_in_window,omitempty"`
+	NewInWindow      bool      `json:"new_in_window,omitempty"`
+}
+
+type CustomerSortField string
+
+const (
+	CustomerSortRevenue       CustomerSortField = "revenue"
+	CustomerSortRevenueWindow CustomerSortField = "revenue_in_window"
+	CustomerSortOrders        CustomerSortField = "orders"
+	CustomerSortLastOrder     CustomerSortField = "last_order"
+	CustomerSortFirstOrder    CustomerSortField = "first_order"
+)
+
+type CustomerFilter struct {
+	WindowFrom *time.Time
+	WindowTo   *time.Time
+	OnlyNew    bool
+	SortBy     CustomerSortField
+	SortDesc   bool
+	Limit      int
+}
+
 var (
 	ErrOrderNotFound     = errors.New("order not found")
 	ErrInvalidTransition = errors.New("invalid status transition")
@@ -96,4 +150,7 @@ type Storage interface {
 	CancelOrder(ctx context.Context, id string, reason string) (Order, error)
 	SearchOrders(ctx context.Context, query string, page pagination.Page) ([]Order, int, error)
 	GetOrderStats(ctx context.Context) (OrderStats, error)
+	GetSalesByProduct(ctx context.Context, from, to time.Time, includeStatuses []Status) ([]ProductSales, error)
+	GetCustomerSummary(ctx context.Context, filter CustomerFilter) ([]CustomerSummary, error)
+	BulkUpdateStatus(ctx context.Context, orderIDs []string, newStatus Status, note string) (BulkStatusResult, error)
 }
