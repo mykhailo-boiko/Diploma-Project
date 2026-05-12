@@ -132,6 +132,12 @@ async def api_put(path: str, body: dict[str, Any] | None = None) -> dict[str, An
     return resp.json()
 
 
+async def api_patch(path: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
+    resp = await _request("PATCH", path, json=body)
+    resp.raise_for_status()
+    return resp.json()
+
+
 async def api_delete(path: str) -> dict[str, Any]:
     resp = await _request("DELETE", path)
     resp.raise_for_status()

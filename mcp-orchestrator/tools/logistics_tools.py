@@ -4,7 +4,7 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from http_client import api_get, api_post, api_put, api_get_all
+from http_client import api_get, api_post, api_put, api_patch, api_get_all
 
 
 def register(mcp: FastMCP) -> None:
@@ -182,6 +182,241 @@ def register(mcp: FastMCP) -> None:
             "name": name, "type": type,
             "cost_per_km": cost_per_km, "is_active": is_active,
         })
+
+    @mcp.tool()
+    async def shipments_tracking(tracking_number: str) -> dict[str, Any]:
+        """Full postal tracking record for a shipment by its human-readable tracking number
+        (e.g. CO-2026-K7H2P9). Returns the timeline of all events, current location, recipient and
+        sender details, delivery attempts and ETA.
+
+        Use for ANY 'where is my package', 'tracking info', 'shipment status by tracking number',
+        'show me the timeline for X' question.
+
+        Response: {shipment, events[], delivery_attempts[]}.
+
+        Args:
+            tracking_number: Human-readable code from shipment.tracking_number (NOT the UUID).
+        """
+        return await api_get(f"/api/v1/tracking/{tracking_number}")
+
+    @mcp.tool()
+    async def shipments_timeline(shipment_id: str) -> dict[str, Any]:
+        """Full timeline of a shipment by internal UUID — events + delivery attempts + current shipment row.
+
+        Prefer shipments_tracking when you have the tracking_number; use this when only the UUID is available.
+
+        Args:
+            shipment_id: Internal UUID of the shipment.
+        """
+        return await api_get(f"/api/v1/shipments/{shipment_id}/timeline")
+
+    @mcp.tool()
+    async def shipments_update_recipient(
+        shipment_id: str,
+        full_name: str | None = None,
+        phone: str | None = None,
+        email: str | None = None,
+        company: str | None = None,
+        street: str | None = None,
+        city: str | None = None,
+        region: str | None = None,
+        postcode: str | None = None,
+        country: str | None = None,
+        delivery_notes: str | None = None,
+    ) -> dict[str, Any]:
+        """Partial update of shipment recipient (PATCH semantics — only provided fields change).
+        Triggers a 'recipient_updated' event + audit log entry. Allowed until status=delivered.
+
+        For destination-address changes after the shipment left the origin warehouse, prefer
+        shipments_redirect instead (it also recomputes ETA).
+
+        Args:
+            shipment_id: Shipment UUID.
+            full_name, phone (E.164), email, company, street, city, region, postcode, country,
+            delivery_notes: Any subset of recipient fields to update.
+        """
+        body: dict[str, Any] = {}
+        for k, v in {
+            "full_name": full_name, "phone": phone, "email": email, "company": company,
+            "street": street, "city": city, "region": region, "postcode": postcode,
+            "country": country, "delivery_notes": delivery_notes,
+        }.items():
+            if v is not None:
+                body[k] = v
+        return await api_patch(f"/api/v1/shipments/{shipment_id}/recipient", body)
+
+    @mcp.tool()
+    async def shipments_update_sender(
+        shipment_id: str,
+        full_name: str | None = None,
+        phone: str | None = None,
+        email: str | None = None,
+        company: str | None = None,
+        street: str | None = None,
+        city: str | None = None,
+        region: str | None = None,
+        postcode: str | None = None,
+        country: str | None = None,
+    ) -> dict[str, Any]:
+        """Partial update of shipment sender (PATCH). Same semantics as shipments_update_recipient,
+        but for the sender side. Trigger a 'sender_updated' event + audit log entry.
+
+        Args:
+            shipment_id: Shipment UUID.
+            Other args: partial sender fields.
+        """
+        body: dict[str, Any] = {}
+        for k, v in {
+            "full_name": full_name, "phone": phone, "email": email, "company": company,
+            "street": street, "city": city, "region": region, "postcode": postcode,
+            "country": country,
+        }.items():
+            if v is not None:
+                body[k] = v
+        return await api_patch(f"/api/v1/shipments/{shipment_id}/sender", body)
+
+    @mcp.tool()
+    async def shipments_add_event(
+        shipment_id: str,
+        event_type: str,
+        location_city: str | None = None,
+        location_hub: str | None = None,
+        notes: str | None = None,
+    ) -> dict[str, Any]:
+        """Manually append a tracking event/checkpoint to a shipment's timeline. Use for
+        driver-scan, carrier API hooks, or any operational note that isn't a status transition.
+
+        Common event types:
+            label_created | awaiting_pickup | picked_up | in_transit | hub_arrived | hub_departed
+            | out_for_delivery | delivery_attempted | delivered | held_at_office | redirected
+            | returned_to_sender | exception | customs_clearance | recipient_updated
+
+        Args:
+            shipment_id: Shipment UUID.
+            event_type: One of the strings above (or any free-form descriptor).
+            location_city: City where the event happened (optional).
+            location_hub: Sorting hub or facility name (optional).
+            notes: Free-text description.
+        """
+        body: dict[str, Any] = {"type": event_type}
+        if location_city:
+            body["location_city"] = location_city
+        if location_hub:
+            body["location_hub"] = location_hub
+        if notes:
+            body["notes"] = notes
+        return await api_post(f"/api/v1/shipments/{shipment_id}/events", body)
+
+    @mcp.tool()
+    async def shipments_reschedule(
+        shipment_id: str,
+        new_eta: str,
+        reason: str = "",
+    ) -> dict[str, Any]:
+        """Move the estimated delivery time of a shipment to a new value. Triggers a 'rescheduled'
+        event and audit entry. Use when recipient is unavailable, weather delay, etc.
+
+        Args:
+            shipment_id: Shipment UUID.
+            new_eta: New estimated delivery date-time in RFC3339 (e.g. 2026-05-14T15:00:00Z).
+            reason: Human-readable reason (kept in event payload).
+        """
+        return await api_post(f"/api/v1/shipments/{shipment_id}/reschedule",
+            {"new_eta": new_eta, "reason": reason})
+
+    @mcp.tool()
+    async def shipments_redirect(
+        shipment_id: str,
+        new_address: dict[str, Any],
+        reason: str = "",
+    ) -> dict[str, Any]:
+        """Change the destination address of an in-flight shipment. Sets status='redirected',
+        writes a 'redirected' event with the new city, and triggers ETA recomputation downstream.
+
+        Refused for shipments already in delivered / returned / cancelled state.
+
+        Args:
+            shipment_id: Shipment UUID.
+            new_address: Address object — at minimum {street, city}; can include full_name, phone,
+                email, region, postcode, country, delivery_notes.
+            reason: Human-readable reason.
+        """
+        return await api_post(f"/api/v1/shipments/{shipment_id}/redirect",
+            {"new_address": new_address, "reason": reason})
+
+    @mcp.tool()
+    async def shipments_hold_for_pickup(
+        shipment_id: str,
+        office_address: str,
+        reason: str = "",
+    ) -> dict[str, Any]:
+        """Switch a shipment to 'held_at_office' status — recipient must pick up at the carrier office.
+
+        Args:
+            shipment_id: Shipment UUID.
+            office_address: Plain-text address of the pickup point (also stored as event location_hub).
+            reason: Human-readable reason.
+        """
+        return await api_post(f"/api/v1/shipments/{shipment_id}/hold-for-pickup",
+            {"office_address": office_address, "reason": reason})
+
+    @mcp.tool()
+    async def shipments_record_attempt(
+        shipment_id: str,
+        reason: str,
+        notes: str = "",
+        next_attempt_at: str | None = None,
+    ) -> dict[str, Any]:
+        """Record a failed delivery attempt. Auto-bumps attempt_number; on the 3rd attempt the
+        shipment is automatically transitioned to 'returned_to_sender'.
+
+        Common reasons: no_one_home | address_invalid | refused | undeliverable | locked_building.
+
+        Args:
+            shipment_id: Shipment UUID.
+            reason: One of the common reasons above (or free-form short code).
+            notes: Free-text detail.
+            next_attempt_at: Optional RFC3339 timestamp for the next attempt.
+        """
+        body: dict[str, Any] = {"reason": reason, "notes": notes}
+        if next_attempt_at:
+            body["next_attempt_at"] = next_attempt_at
+        return await api_post(f"/api/v1/shipments/{shipment_id}/record-attempt", body)
+
+    @mcp.tool()
+    async def shipments_record_delivery(
+        shipment_id: str,
+        signature_name: str,
+        photo_url: str = "",
+    ) -> dict[str, Any]:
+        """Confirm delivery — transitions status to 'delivered', captures signature name and
+        optional photo URL (proof of delivery). Triggers 'delivered' event.
+
+        Args:
+            shipment_id: Shipment UUID.
+            signature_name: Person who signed for the package.
+            photo_url: Optional URL of the proof-of-delivery photo.
+        """
+        return await api_post(f"/api/v1/shipments/{shipment_id}/record-delivery",
+            {"signature_name": signature_name, "photo_url": photo_url})
+
+    @mcp.tool()
+    async def shipments_in_transit_summary() -> dict[str, Any]:
+        """Operational dashboard: all shipments NOT yet delivered/returned/cancelled.
+        Returns the shipments_list filtered to in-flight statuses with limit=200 + fetch_all=True.
+
+        Use for 'what's in transit right now', 'pending deliveries today', 'in-flight overview',
+        morning operations briefing.
+        """
+        all_results = []
+        for status in ("created", "label_created", "awaiting_pickup", "picked_up",
+                       "in_transit", "at_hub", "out_for_delivery", "delivery_attempted",
+                       "held_at_office", "redirected"):
+            r = await api_get_all("/api/v1/shipments", {"status": status, "limit": 200})
+            payload = r.get("data") if isinstance(r, dict) else r
+            if isinstance(payload, list):
+                all_results.extend(payload)
+        return {"data": all_results, "meta": {"total": len(all_results)}}
 
     @mcp.tool()
     async def shipments_reassign_carrier(
