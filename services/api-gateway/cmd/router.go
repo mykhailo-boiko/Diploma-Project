@@ -81,6 +81,8 @@ func newRouter(cfg config, log *zap.Logger) (http.Handler, error) {
 	mux.Handle("/api/v1/carriers", logisticsProxy)
 	mux.Handle("/api/v1/routes/", logisticsProxy)
 	mux.Handle("/api/v1/logistics/", logisticsProxy)
+	mux.Handle("/api/v1/tracking/", logisticsProxy)
+	mux.Handle("/api/v1/public/tracking/", logisticsProxy)
 
 	mux.Handle("/api/v1/analytics/", analyticsProxy)
 
@@ -91,6 +93,7 @@ func newRouter(cfg config, log *zap.Logger) (http.Handler, error) {
 		"/api/v1/auth/login",
 		"/api/v1/auth/refresh",
 		"/api/v1/auth/password-reset",
+		"/api/v1/public/",
 	}
 
 	metrics := middleware.NewMetrics("api_gateway")

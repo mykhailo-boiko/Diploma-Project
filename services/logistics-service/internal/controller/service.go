@@ -10,7 +10,10 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
+	"strings"
+
 	"github.com/haradrim/chainorchestra/internal/pkg/audit"
+	"github.com/haradrim/chainorchestra/internal/pkg/middleware"
 	natspkg "github.com/haradrim/chainorchestra/internal/pkg/nats"
 	"github.com/haradrim/chainorchestra/internal/pkg/pagination"
 	"github.com/haradrim/chainorchestra/services/logistics-service/internal/carrier"
@@ -128,9 +131,344 @@ func (s *Service) UpdateShipmentStatus(ctx context.Context, id string, newStatus
 		return shipment.Shipment{}, fmt.Errorf("failed to update shipment status: %w", err)
 	}
 
+	_, _ = s.shipments.RecordEvent(ctx, shipment.ShipmentEvent{
+		ShipmentID: id,
+		Type:       string(newStatus),
+		Notes:      fmt.Sprintf("status changed from %s to %s", current.Status, newStatus),
+		RecordedBy: actorEmail(ctx),
+	})
+
 	s.publishShipmentStatusChanged(updated, current.Status)
+	s.audit.Log(ctx, audit.Entry{
+		Action:       "shipments.update_status",
+		EntityType:   "shipment",
+		EntityIDs:    []string{id},
+		Params:       map[string]any{"old_status": current.Status, "new_status": newStatus},
+		ResultStatus: audit.StatusSuccess,
+		SuccessCount: 1,
+	})
 
 	return updated, nil
+}
+
+func (s *Service) GetShipmentByTracking(ctx context.Context, trackingNumber string) (shipment.Shipment, error) {
+	return s.shipments.GetShipmentByTracking(ctx, trackingNumber)
+}
+
+func (s *Service) GetTimeline(ctx context.Context, shipmentID string) (shipment.Timeline, error) {
+	sh, err := s.shipments.GetShipmentByID(ctx, shipmentID)
+	if err != nil {
+		return shipment.Timeline{}, err
+	}
+	events, err := s.shipments.GetTimeline(ctx, shipmentID)
+	if err != nil {
+		return shipment.Timeline{}, err
+	}
+	attempts, err := s.shipments.GetDeliveryAttempts(ctx, shipmentID)
+	if err != nil {
+		return shipment.Timeline{}, err
+	}
+	if events == nil {
+		events = []shipment.ShipmentEvent{}
+	}
+	if attempts == nil {
+		attempts = []shipment.DeliveryAttempt{}
+	}
+	return shipment.Timeline{Shipment: sh, Events: events, DeliveryAttempts: attempts}, nil
+}
+
+func (s *Service) GetTimelineByTracking(ctx context.Context, trackingNumber string) (shipment.Timeline, error) {
+	sh, err := s.shipments.GetShipmentByTracking(ctx, trackingNumber)
+	if err != nil {
+		return shipment.Timeline{}, err
+	}
+	return s.GetTimeline(ctx, sh.ID)
+}
+
+func (s *Service) UpdateRecipient(ctx context.Context, id string, patch shipment.RecipientPatch) (shipment.Shipment, error) {
+	if err := validatePatch(patch); err != nil {
+		return shipment.Shipment{}, err
+	}
+	updated, err := s.shipments.UpdateRecipient(ctx, id, patch)
+	if err != nil {
+		return shipment.Shipment{}, err
+	}
+	_, _ = s.shipments.RecordEvent(ctx, shipment.ShipmentEvent{
+		ShipmentID: id,
+		Type:       "recipient_updated",
+		Notes:      "recipient details modified",
+		RecordedBy: actorEmail(ctx),
+		Payload:    patchToMap(patch),
+	})
+	s.audit.Log(ctx, audit.Entry{
+		Action:       "shipments.update_recipient",
+		EntityType:   "shipment",
+		EntityIDs:    []string{id},
+		Params:       patchToMap(patch),
+		ResultStatus: audit.StatusSuccess,
+		SuccessCount: 1,
+	})
+	return updated, nil
+}
+
+func (s *Service) UpdateSender(ctx context.Context, id string, patch shipment.RecipientPatch) (shipment.Shipment, error) {
+	if err := validatePatch(patch); err != nil {
+		return shipment.Shipment{}, err
+	}
+	updated, err := s.shipments.UpdateSender(ctx, id, patch)
+	if err != nil {
+		return shipment.Shipment{}, err
+	}
+	_, _ = s.shipments.RecordEvent(ctx, shipment.ShipmentEvent{
+		ShipmentID: id,
+		Type:       "sender_updated",
+		Notes:      "sender details modified",
+		RecordedBy: actorEmail(ctx),
+		Payload:    patchToMap(patch),
+	})
+	s.audit.Log(ctx, audit.Entry{
+		Action:       "shipments.update_sender",
+		EntityType:   "shipment",
+		EntityIDs:    []string{id},
+		Params:       patchToMap(patch),
+		ResultStatus: audit.StatusSuccess,
+		SuccessCount: 1,
+	})
+	return updated, nil
+}
+
+func (s *Service) RecordEvent(ctx context.Context, e shipment.ShipmentEvent) (shipment.ShipmentEvent, error) {
+	if e.Type == "" {
+		return shipment.ShipmentEvent{}, fmt.Errorf("event_type is required")
+	}
+	if e.RecordedBy == "" {
+		e.RecordedBy = actorEmail(ctx)
+	}
+	rec, err := s.shipments.RecordEvent(ctx, e)
+	if err != nil {
+		return shipment.ShipmentEvent{}, err
+	}
+	s.audit.Log(ctx, audit.Entry{
+		Action:     "shipments.add_event",
+		EntityType: "shipment",
+		EntityIDs:  []string{e.ShipmentID},
+		Params: map[string]any{
+			"event_type":    e.Type,
+			"location_city": e.LocationCity,
+			"location_hub":  e.LocationHub,
+		},
+		ResultStatus: audit.StatusSuccess,
+		SuccessCount: 1,
+	})
+	return rec, nil
+}
+
+func (s *Service) Reschedule(ctx context.Context, id string, newETA time.Time, reason string) (shipment.Shipment, error) {
+	updated, err := s.shipments.UpdateEstimatedDelivery(ctx, id, newETA)
+	if err != nil {
+		return shipment.Shipment{}, err
+	}
+	_, _ = s.shipments.RecordEvent(ctx, shipment.ShipmentEvent{
+		ShipmentID: id,
+		Type:       "rescheduled",
+		Notes:      reason,
+		RecordedBy: actorEmail(ctx),
+		Payload:    map[string]any{"new_eta": newETA.Format(time.RFC3339), "reason": reason},
+	})
+	s.audit.Log(ctx, audit.Entry{
+		Action:       "shipments.reschedule",
+		EntityType:   "shipment",
+		EntityIDs:    []string{id},
+		Params:       map[string]any{"new_eta": newETA, "reason": reason},
+		ResultStatus: audit.StatusSuccess,
+		SuccessCount: 1,
+	})
+	return updated, nil
+}
+
+func (s *Service) Redirect(ctx context.Context, id string, newAddress shipment.Address, reason string) (shipment.Shipment, error) {
+	if newAddress.City == "" || newAddress.Street == "" {
+		return shipment.Shipment{}, fmt.Errorf("new address must include at least street and city")
+	}
+	current, err := s.shipments.GetShipmentByID(ctx, id)
+	if err != nil {
+		return shipment.Shipment{}, err
+	}
+	switch current.Status {
+	case shipment.StatusDelivered, shipment.StatusReturnedToSender, shipment.StatusCancelled, shipment.StatusReturned:
+		return shipment.Shipment{}, fmt.Errorf("cannot redirect a shipment in status %s", current.Status)
+	}
+	updated, err := s.shipments.RedirectAddress(ctx, id, newAddress, reason)
+	if err != nil {
+		return shipment.Shipment{}, err
+	}
+	s.audit.Log(ctx, audit.Entry{
+		Action:       "shipments.redirect",
+		EntityType:   "shipment",
+		EntityIDs:    []string{id},
+		Params:       map[string]any{"new_city": newAddress.City, "new_street": newAddress.Street, "reason": reason},
+		ResultStatus: audit.StatusSuccess,
+		SuccessCount: 1,
+	})
+	return updated, nil
+}
+
+func (s *Service) HoldForPickup(ctx context.Context, id, officeAddress, reason string) (shipment.Shipment, error) {
+	updated, err := s.shipments.UpdateShipmentStatus(ctx, id, shipment.StatusHeldAtOffice)
+	if err != nil {
+		return shipment.Shipment{}, err
+	}
+	_, _ = s.shipments.RecordEvent(ctx, shipment.ShipmentEvent{
+		ShipmentID: id,
+		Type:       "held_at_office",
+		LocationHub: officeAddress,
+		Notes:      reason,
+		RecordedBy: actorEmail(ctx),
+	})
+	s.audit.Log(ctx, audit.Entry{
+		Action:       "shipments.hold_for_pickup",
+		EntityType:   "shipment",
+		EntityIDs:    []string{id},
+		Params:       map[string]any{"office": officeAddress, "reason": reason},
+		ResultStatus: audit.StatusSuccess,
+		SuccessCount: 1,
+	})
+	return updated, nil
+}
+
+func (s *Service) RecordAttempt(ctx context.Context, id, reason, notes string, nextAttemptAt *time.Time) (shipment.DeliveryAttempt, error) {
+	current, err := s.shipments.GetShipmentByID(ctx, id)
+	if err != nil {
+		return shipment.DeliveryAttempt{}, err
+	}
+	attempt, err := s.shipments.RecordDeliveryAttempt(ctx, shipment.DeliveryAttempt{
+		ShipmentID:    id,
+		Reason:        reason,
+		Notes:         notes,
+		NextAttemptAt: nextAttemptAt,
+	})
+	if err != nil {
+		return shipment.DeliveryAttempt{}, err
+	}
+	_, _ = s.shipments.RecordEvent(ctx, shipment.ShipmentEvent{
+		ShipmentID: id,
+		Type:       "delivery_attempted",
+		Notes:      reason,
+		RecordedBy: actorEmail(ctx),
+		Payload: map[string]any{
+			"attempt_number":  attempt.AttemptNumber,
+			"reason":          reason,
+			"next_attempt_at": formatTimePtr(nextAttemptAt),
+		},
+	})
+	if attempt.AttemptNumber >= 3 {
+		_, _ = s.shipments.UpdateShipmentStatus(ctx, id, shipment.StatusReturnedToSender)
+		_, _ = s.shipments.RecordEvent(ctx, shipment.ShipmentEvent{
+			ShipmentID: id,
+			Type:       "returned_to_sender",
+			Notes:      "automatically returned after 3 failed delivery attempts",
+			RecordedBy: "system",
+		})
+	} else if current.Status != shipment.StatusDeliveryAttempted {
+		_, _ = s.shipments.UpdateShipmentStatus(ctx, id, shipment.StatusDeliveryAttempted)
+	}
+	s.audit.Log(ctx, audit.Entry{
+		Action:       "shipments.record_attempt",
+		EntityType:   "shipment",
+		EntityIDs:    []string{id},
+		Params:       map[string]any{"reason": reason, "attempt_number": attempt.AttemptNumber},
+		ResultStatus: audit.StatusSuccess,
+		SuccessCount: 1,
+	})
+	return attempt, nil
+}
+
+func (s *Service) RecordDelivery(ctx context.Context, id, signature, photoURL string) (shipment.Shipment, error) {
+	updated, err := s.shipments.RecordDelivery(ctx, id, signature, photoURL)
+	if err != nil {
+		return shipment.Shipment{}, err
+	}
+	_, _ = s.shipments.RecordEvent(ctx, shipment.ShipmentEvent{
+		ShipmentID: id,
+		Type:       "delivered",
+		Notes:      "delivery confirmed",
+		RecordedBy: actorEmail(ctx),
+		Payload:    map[string]any{"signature": signature, "photo_url": photoURL},
+	})
+	s.audit.Log(ctx, audit.Entry{
+		Action:       "shipments.record_delivery",
+		EntityType:   "shipment",
+		EntityIDs:    []string{id},
+		Params:       map[string]any{"signature": signature, "has_photo": photoURL != ""},
+		ResultStatus: audit.StatusSuccess,
+		SuccessCount: 1,
+	})
+	return updated, nil
+}
+
+func actorEmail(ctx context.Context) string {
+	if e := middleware.GetUserEmail(ctx); e != "" {
+		return e
+	}
+	return "system"
+}
+
+func validatePatch(p shipment.RecipientPatch) error {
+	if p.Phone != nil && *p.Phone != "" {
+		v := strings.TrimSpace(*p.Phone)
+		if !strings.HasPrefix(v, "+") || len(v) < 6 {
+			return fmt.Errorf("invalid phone format: expected E.164 (e.g. +380501112233), received %q", *p.Phone)
+		}
+	}
+	if p.Email != nil && *p.Email != "" {
+		v := strings.TrimSpace(*p.Email)
+		if !strings.Contains(v, "@") || !strings.Contains(v, ".") {
+			return fmt.Errorf("invalid email format: received %q", *p.Email)
+		}
+	}
+	return nil
+}
+
+func patchToMap(p shipment.RecipientPatch) map[string]any {
+	m := map[string]any{}
+	if p.FullName != nil {
+		m["full_name"] = *p.FullName
+	}
+	if p.Phone != nil {
+		m["phone"] = *p.Phone
+	}
+	if p.Email != nil {
+		m["email"] = *p.Email
+	}
+	if p.Company != nil {
+		m["company"] = *p.Company
+	}
+	if p.Street != nil {
+		m["street"] = *p.Street
+	}
+	if p.City != nil {
+		m["city"] = *p.City
+	}
+	if p.Region != nil {
+		m["region"] = *p.Region
+	}
+	if p.Postcode != nil {
+		m["postcode"] = *p.Postcode
+	}
+	if p.Country != nil {
+		m["country"] = *p.Country
+	}
+	if p.DeliveryNotes != nil {
+		m["delivery_notes"] = *p.DeliveryNotes
+	}
+	return m
+}
+
+func formatTimePtr(t *time.Time) string {
+	if t == nil {
+		return ""
+	}
+	return t.Format(time.RFC3339)
 }
 
 func (s *Service) CreateCarrier(ctx context.Context, req CreateCarrierRequest) (carrier.Carrier, error) {

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"go.uber.org/zap"
@@ -30,6 +31,18 @@ type LogisticsService interface {
 	GetPerformance(ctx context.Context) (PerformanceStats, error)
 	BulkUpdateStatus(ctx context.Context, updates []BulkStatusItem) []BulkStatusResult
 	ReassignCarrierByCity(ctx context.Context, fromCarrierID, toCarrierID, city string, statuses []shipment.Status, dryRun bool) (shipment.ReassignResult, error)
+
+	GetShipmentByTracking(ctx context.Context, trackingNumber string) (shipment.Shipment, error)
+	GetTimeline(ctx context.Context, shipmentID string) (shipment.Timeline, error)
+	GetTimelineByTracking(ctx context.Context, trackingNumber string) (shipment.Timeline, error)
+	UpdateRecipient(ctx context.Context, id string, patch shipment.RecipientPatch) (shipment.Shipment, error)
+	UpdateSender(ctx context.Context, id string, patch shipment.RecipientPatch) (shipment.Shipment, error)
+	RecordEvent(ctx context.Context, e shipment.ShipmentEvent) (shipment.ShipmentEvent, error)
+	Reschedule(ctx context.Context, id string, newETA time.Time, reason string) (shipment.Shipment, error)
+	Redirect(ctx context.Context, id string, newAddress shipment.Address, reason string) (shipment.Shipment, error)
+	HoldForPickup(ctx context.Context, id, officeAddress, reason string) (shipment.Shipment, error)
+	RecordAttempt(ctx context.Context, id, reason, notes string, nextAttemptAt *time.Time) (shipment.DeliveryAttempt, error)
+	RecordDelivery(ctx context.Context, id, signature, photoURL string) (shipment.Shipment, error)
 }
 
 type LogisticsController struct {
@@ -402,6 +415,277 @@ func (c *LogisticsController) GetPerformance(w http.ResponseWriter, r *http.Requ
 	}
 
 	httpresponse.OK(w, stats)
+}
+
+func (c *LogisticsController) TrackingByNumber(w http.ResponseWriter, r *http.Request) {
+	trackingNumber := r.PathValue("tracking_number")
+	if trackingNumber == "" {
+		httpresponse.BadRequest(w, "validation_error", "tracking_number is required")
+		return
+	}
+	tl, err := c.svc.GetTimelineByTracking(r.Context(), trackingNumber)
+	if err != nil {
+		if errors.Is(err, shipment.ErrShipmentNotFound) {
+			httpresponse.NotFound(w, "shipment_not_found", "shipment not found")
+			return
+		}
+		c.log.Error("Failed to fetch tracking", zap.Error(err))
+		httpresponse.InternalError(w, "internal_error", "internal server error")
+		return
+	}
+	httpresponse.OK(w, tl)
+}
+
+func (c *LogisticsController) PublicTracking(w http.ResponseWriter, r *http.Request) {
+	trackingNumber := r.PathValue("tracking_number")
+	if trackingNumber == "" {
+		httpresponse.BadRequest(w, "validation_error", "tracking_number is required")
+		return
+	}
+	last4 := r.URL.Query().Get("last4")
+	if last4 == "" || len(last4) != 4 {
+		httpresponse.BadRequest(w, "validation_error", "?last4=<recipient phone last 4 digits> is required")
+		return
+	}
+	tl, err := c.svc.GetTimelineByTracking(r.Context(), trackingNumber)
+	if err != nil {
+		if errors.Is(err, shipment.ErrShipmentNotFound) {
+			httpresponse.NotFound(w, "shipment_not_found", "shipment not found")
+			return
+		}
+		httpresponse.InternalError(w, "internal_error", "internal server error")
+		return
+	}
+	phone := tl.Shipment.Recipient.Phone
+	if len(phone) < 4 || phone[len(phone)-4:] != last4 {
+		httpresponse.Forbidden(w, "verification_failed", "phone digits do not match")
+		return
+	}
+
+	maskedName := tl.Shipment.Recipient.FullName
+	if len(maskedName) > 2 {
+		maskedName = maskedName[:1] + strings.Repeat("*", len(maskedName)-2) + maskedName[len(maskedName)-1:]
+	}
+	publicTl := struct {
+		TrackingNumber      string                    `json:"tracking_number"`
+		Status              shipment.Status           `json:"status"`
+		CurrentLocationCity string                    `json:"current_location_city,omitempty"`
+		CurrentLocationHub  string                    `json:"current_location_hub,omitempty"`
+		EstimatedDeliveryAt *time.Time                `json:"estimated_delivery_at,omitempty"`
+		DeliveredAt         *time.Time                `json:"delivered_at,omitempty"`
+		DeliveryAttempts    int                       `json:"delivery_attempts"`
+		RecipientName       string                    `json:"recipient_name"`
+		RecipientCity       string                    `json:"recipient_city,omitempty"`
+		Events              []shipment.ShipmentEvent  `json:"events"`
+	}{
+		TrackingNumber:      tl.Shipment.TrackingNumber,
+		Status:              tl.Shipment.Status,
+		CurrentLocationCity: tl.Shipment.CurrentLocationCity,
+		CurrentLocationHub:  tl.Shipment.CurrentLocationHub,
+		EstimatedDeliveryAt: tl.Shipment.EstimatedDeliveryAt,
+		DeliveredAt:         tl.Shipment.DeliveredAt,
+		DeliveryAttempts:    tl.Shipment.DeliveryAttempts,
+		RecipientName:       maskedName,
+		RecipientCity:       tl.Shipment.Recipient.City,
+		Events:              tl.Events,
+	}
+	httpresponse.OK(w, publicTl)
+}
+
+func (c *LogisticsController) GetTimeline(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		httpresponse.BadRequest(w, "validation_error", "shipment id is required")
+		return
+	}
+	tl, err := c.svc.GetTimeline(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, shipment.ErrShipmentNotFound) {
+			httpresponse.NotFound(w, "shipment_not_found", "shipment not found")
+			return
+		}
+		c.log.Error("Failed to fetch timeline", zap.Error(err))
+		httpresponse.InternalError(w, "internal_error", "internal server error")
+		return
+	}
+	httpresponse.OK(w, tl)
+}
+
+func (c *LogisticsController) UpdateRecipient(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var patch shipment.RecipientPatch
+	if err := json.NewDecoder(r.Body).Decode(&patch); err != nil {
+		httpresponse.BadRequest(w, "invalid_request", "invalid body")
+		return
+	}
+	updated, err := c.svc.UpdateRecipient(r.Context(), id, patch)
+	if err != nil {
+		if errors.Is(err, shipment.ErrShipmentNotFound) {
+			httpresponse.NotFound(w, "shipment_not_found", "shipment not found")
+			return
+		}
+		httpresponse.BadRequest(w, "validation_error", err.Error())
+		return
+	}
+	httpresponse.OK(w, updated)
+}
+
+func (c *LogisticsController) UpdateSender(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var patch shipment.RecipientPatch
+	if err := json.NewDecoder(r.Body).Decode(&patch); err != nil {
+		httpresponse.BadRequest(w, "invalid_request", "invalid body")
+		return
+	}
+	updated, err := c.svc.UpdateSender(r.Context(), id, patch)
+	if err != nil {
+		if errors.Is(err, shipment.ErrShipmentNotFound) {
+			httpresponse.NotFound(w, "shipment_not_found", "shipment not found")
+			return
+		}
+		httpresponse.BadRequest(w, "validation_error", err.Error())
+		return
+	}
+	httpresponse.OK(w, updated)
+}
+
+func (c *LogisticsController) AddEvent(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var req struct {
+		Type         string `json:"type"`
+		LocationCity string `json:"location_city"`
+		LocationHub  string `json:"location_hub"`
+		Notes        string `json:"notes"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpresponse.BadRequest(w, "invalid_request", "invalid body")
+		return
+	}
+	if req.Type == "" {
+		httpresponse.BadRequest(w, "validation_error", "type is required")
+		return
+	}
+	ev, err := c.svc.RecordEvent(r.Context(), shipment.ShipmentEvent{
+		ShipmentID:   id,
+		Type:         req.Type,
+		LocationCity: req.LocationCity,
+		LocationHub:  req.LocationHub,
+		Notes:        req.Notes,
+	})
+	if err != nil {
+		httpresponse.BadRequest(w, "validation_error", err.Error())
+		return
+	}
+	httpresponse.OK(w, ev)
+}
+
+func (c *LogisticsController) Reschedule(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var req struct {
+		NewETA string `json:"new_eta"`
+		Reason string `json:"reason"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpresponse.BadRequest(w, "invalid_request", "invalid body")
+		return
+	}
+	t, err := time.Parse(time.RFC3339, req.NewETA)
+	if err != nil {
+		httpresponse.BadRequest(w, "validation_error", "new_eta must be RFC3339")
+		return
+	}
+	updated, err := c.svc.Reschedule(r.Context(), id, t, req.Reason)
+	if err != nil {
+		httpresponse.BadRequest(w, "validation_error", err.Error())
+		return
+	}
+	httpresponse.OK(w, updated)
+}
+
+func (c *LogisticsController) Redirect(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var req struct {
+		NewAddress shipment.Address `json:"new_address"`
+		Reason     string           `json:"reason"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpresponse.BadRequest(w, "invalid_request", "invalid body")
+		return
+	}
+	updated, err := c.svc.Redirect(r.Context(), id, req.NewAddress, req.Reason)
+	if err != nil {
+		httpresponse.BadRequest(w, "validation_error", err.Error())
+		return
+	}
+	httpresponse.OK(w, updated)
+}
+
+func (c *LogisticsController) HoldForPickup(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var req struct {
+		OfficeAddress string `json:"office_address"`
+		Reason        string `json:"reason"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpresponse.BadRequest(w, "invalid_request", "invalid body")
+		return
+	}
+	updated, err := c.svc.HoldForPickup(r.Context(), id, req.OfficeAddress, req.Reason)
+	if err != nil {
+		httpresponse.BadRequest(w, "validation_error", err.Error())
+		return
+	}
+	httpresponse.OK(w, updated)
+}
+
+func (c *LogisticsController) RecordAttempt(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var req struct {
+		Reason        string  `json:"reason"`
+		Notes         string  `json:"notes"`
+		NextAttemptAt *string `json:"next_attempt_at"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpresponse.BadRequest(w, "invalid_request", "invalid body")
+		return
+	}
+	if req.Reason == "" {
+		httpresponse.BadRequest(w, "validation_error", "reason is required")
+		return
+	}
+	var nextAt *time.Time
+	if req.NextAttemptAt != nil && *req.NextAttemptAt != "" {
+		t, err := time.Parse(time.RFC3339, *req.NextAttemptAt)
+		if err != nil {
+			httpresponse.BadRequest(w, "validation_error", "next_attempt_at must be RFC3339")
+			return
+		}
+		nextAt = &t
+	}
+	attempt, err := c.svc.RecordAttempt(r.Context(), id, req.Reason, req.Notes, nextAt)
+	if err != nil {
+		httpresponse.BadRequest(w, "validation_error", err.Error())
+		return
+	}
+	httpresponse.OK(w, attempt)
+}
+
+func (c *LogisticsController) RecordDelivery(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var req struct {
+		SignatureName string `json:"signature_name"`
+		PhotoURL      string `json:"photo_url"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpresponse.BadRequest(w, "invalid_request", "invalid body")
+		return
+	}
+	updated, err := c.svc.RecordDelivery(r.Context(), id, req.SignatureName, req.PhotoURL)
+	if err != nil {
+		httpresponse.BadRequest(w, "validation_error", err.Error())
+		return
+	}
+	httpresponse.OK(w, updated)
 }
 
 func parseShipmentFilter(r *http.Request) shipment.Filter {
