@@ -220,6 +220,36 @@ services:
       retries: 5
       start_period: 15s
 
+  simulator-service:
+    build:
+      context: .
+      dockerfile: services/simulator-service/Dockerfile
+    container_name: chainorchestra-simulator-service
+    restart: unless-stopped
+    ports:
+      - "${SIMULATOR_SERVICE_PORT:-8007}:8007"
+    environment:
+      LISTEN: ":8007"
+      GATEWAY_URL: http://api-gateway:8080
+      SERVICE_USER_EMAIL: ${ADMIN_EMAIL:-admin@chainorchestra.local}
+      SERVICE_USER_PASSWORD: ${ADMIN_PASSWORD:-}
+      NATS_URL: nats://nats:4222
+      SIMULATOR_AUTOSTART: ${SIMULATOR_AUTOSTART:-false}
+      SIMULATOR_SCENARIO: ${SIMULATOR_SCENARIO:-steady}
+      SIMULATOR_SPEED: ${SIMULATOR_SPEED:-1.0}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8007/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
   nats:
     image: nats:2-alpine
     container_name: chainorchestra-nats
@@ -254,6 +284,8 @@ services:
       LOGISTICS_SERVICE_URL: http://logistics-service:8004
       ANALYTICS_SERVICE_URL: http://analytics-service:8005
       NOTIFICATION_SERVICE_URL: http://notification-service:8006
+      SIMULATOR_SERVICE_URL: http://simulator-service:8007
+      NATS_URL: nats://nats:4222
     depends_on:
       user-service:
         condition: service_healthy
@@ -266,6 +298,8 @@ services:
       analytics-service:
         condition: service_healthy
       notification-service:
+        condition: service_healthy
+      nats:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]

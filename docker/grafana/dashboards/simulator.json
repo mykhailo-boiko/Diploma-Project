@@ -1,0 +1,98 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "id": 1,
+      "options": { "legend": { "displayMode": "list" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "expr": "rate(simulator_actor_ticks_total[1m])", "legendFormat": "{{actor}}", "refId": "A" }
+      ],
+      "title": "Actor ticks / sec",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "id": 2,
+      "targets": [
+        { "expr": "rate(simulator_actor_errors_total[1m])", "legendFormat": "{{actor}}", "refId": "A" }
+      ],
+      "title": "Actor errors / sec",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 8 },
+      "id": 3,
+      "targets": [
+        { "expr": "rate(simulator_orders_created_total[1m])", "legendFormat": "orders / sec", "refId": "A" }
+      ],
+      "title": "Orders created (rate)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 8 },
+      "id": 4,
+      "targets": [
+        { "expr": "sum by (from, to) (rate(simulator_shipments_progressed_total[5m]))", "legendFormat": "{{from}} → {{to}}", "refId": "A" }
+      ],
+      "title": "Shipment transitions (5m rate)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 8 },
+      "id": 5,
+      "targets": [
+        { "expr": "sum by (kind) (rate(simulator_stock_adjusted_total[5m]))", "legendFormat": "{{kind}}", "refId": "A" }
+      ],
+      "title": "Stock adjustments by kind",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "id": 6,
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum by (le, actor) (rate(simulator_actor_tick_duration_seconds_bucket[5m])))", "legendFormat": "p95 {{actor}}", "refId": "A" }
+      ],
+      "title": "Actor tick duration p95",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "id": 7,
+      "targets": [
+        { "expr": "simulator_orders_created_total", "legendFormat": "orders created (total)", "refId": "A" },
+        { "expr": "simulator_notifications_created_total", "legendFormat": "notifications (total)", "refId": "B" }
+      ],
+      "title": "Cumulative counters",
+      "type": "timeseries"
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["chainorchestra", "simulator"],
+  "templating": { "list": [] },
+  "time": { "from": "now-1h", "to": "now" },
+  "timezone": "browser",
+  "title": "ChainOrchestra — Live Simulator",
+  "uid": "chainorchestra-simulator",
+  "version": 1,
+  "weekStart": ""
+}
