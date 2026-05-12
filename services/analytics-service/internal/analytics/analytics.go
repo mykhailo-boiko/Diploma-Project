@@ -161,6 +161,7 @@ type AuditEntry struct {
 	SuccessCount int       `json:"success_count"`
 	FailureCount int       `json:"failure_count"`
 	ErrorMessage string    `json:"error_message,omitempty"`
+	TraceID      string    `json:"trace_id,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
 }
 

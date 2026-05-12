@@ -302,6 +302,49 @@ func (c *AnalyticsController) GetForecast(w http.ResponseWriter, r *http.Request
 	httpresponse.OK(w, result)
 }
 
+func (c *AnalyticsController) TraceByEntity(w http.ResponseWriter, r *http.Request) {
+	entityID := r.URL.Query().Get("entity_id")
+	if entityID == "" {
+		httpresponse.MissingField(w, "entity_id",
+			"UUID of the entity to trace (order, shipment, product, etc.)",
+			"Provide the entity_id query parameter: GET /api/v1/analytics/trace/by-entity?entity_id=UUID")
+		return
+	}
+	limit := 200
+	if s := r.URL.Query().Get("limit"); s != "" {
+		if v, err := strconv.Atoi(s); err == nil && v > 0 && v <= 1000 {
+			limit = v
+		}
+	}
+	results, err := c.svc.QueryAuditLog(r.Context(), analytics.AuditFilter{
+		EntityID: entityID, Limit: limit,
+	})
+	if err != nil {
+		c.log.Error("Failed to query audit trace", zap.Error(err))
+		httpresponse.InternalError(w, "internal_error", "internal server error")
+		return
+	}
+	if results == nil {
+		results = []analytics.AuditEntry{}
+	}
+	traceIDs := map[string]bool{}
+	for _, e := range results {
+		if e.TraceID != "" {
+			traceIDs[e.TraceID] = true
+		}
+	}
+	uniqueTraces := make([]string, 0, len(traceIDs))
+	for k := range traceIDs {
+		uniqueTraces = append(uniqueTraces, k)
+	}
+	httpresponse.OK(w, map[string]any{
+		"entity_id":     entityID,
+		"total":         len(results),
+		"trace_ids":     uniqueTraces,
+		"events":        results,
+	})
+}
+
 func (c *AnalyticsController) QueryAuditLog(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	var filter analytics.AuditFilter

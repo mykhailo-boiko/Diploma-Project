@@ -49,7 +49,7 @@ func main() {
 	}
 	defer nc.Close()
 
-	eventConsumer := consumer.NewConsumer(nc, log.Named("consumer"))
+	eventConsumer := consumer.NewConsumer(nc, pool, log.Named("consumer"))
 	if err := eventConsumer.Subscribe(); err != nil {
 		log.Fatal("Failed to subscribe to events", zap.Error(err))
 	}

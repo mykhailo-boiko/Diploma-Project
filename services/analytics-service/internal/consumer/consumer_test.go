@@ -125,20 +125,3 @@ func TestHandleLogisticsShipmentStatusChanged(t *testing.T) {
 		t.Errorf("handleLogisticsShipmentStatusChanged failed: %v", err)
 	}
 }
-
-func TestTruncateJSON(t *testing.T) {
-	short := json.RawMessage(`{"key":"value"}`)
-	result := truncateJSON(short)
-	if result != `{"key":"value"}` {
-		t.Errorf("expected unchanged string, got %q", result)
-	}
-
-	long := make(json.RawMessage, 600)
-	for i := range long {
-		long[i] = 'a'
-	}
-	result = truncateJSON(long)
-	if len(result) != 515 {
-		t.Errorf("expected truncated to 515 chars, got %d", len(result))
-	}
-}

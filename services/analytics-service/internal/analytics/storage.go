@@ -278,7 +278,8 @@ func (s *PostgresStorage) QueryAuditLog(ctx context.Context, f AuditFilter) ([]A
 		SELECT id::text, actor_user_id, actor_email, actor_role, service_name, action,
 			COALESCE(entity_type,''), COALESCE(entity_ids,'{}'),
 			COALESCE(params_snip,''), result_status,
-			success_count, failure_count, COALESCE(error_message,''), created_at
+			success_count, failure_count, COALESCE(error_message,''),
+			COALESCE(trace_id,''), created_at
 		FROM audit.action_log
 		WHERE %s
 		ORDER BY created_at DESC
@@ -298,7 +299,8 @@ func (s *PostgresStorage) QueryAuditLog(ctx context.Context, f AuditFilter) ([]A
 		if err := rows.Scan(&e.ID, &e.ActorUserID, &e.ActorEmail, &e.ActorRole,
 			&e.ServiceName, &e.Action, &e.EntityType, &e.EntityIDs,
 			&e.ParamsSnip, &e.ResultStatus,
-			&e.SuccessCount, &e.FailureCount, &e.ErrorMessage, &e.CreatedAt,
+			&e.SuccessCount, &e.FailureCount, &e.ErrorMessage,
+			&e.TraceID, &e.CreatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan audit entry: %w", err)
 		}
