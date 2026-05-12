@@ -663,7 +663,6 @@ func mockDuration(distanceKm float64, carrierType carrier.Type) float64 {
 	return distanceKm / speedKmH
 }
 
-
 func (s *Service) publishShipmentCreated(sh shipment.Shipment) {
 	if s.nc == nil {
 		return

@@ -164,8 +164,8 @@ func (s *PostgresStorage) ListShipments(ctx context.Context, filter Filter, sort
 func (s *PostgresStorage) UpdateShipmentStatus(ctx context.Context, id string, status Status) (Shipment, error) {
 	query := `
 		UPDATE logistics.shipment
-		SET status = $1, updated_at = $2,
-		    delivered_at = CASE WHEN $1 = 'delivered' THEN $2 ELSE delivered_at END
+		SET status = $1::text, updated_at = $2,
+		    delivered_at = CASE WHEN $1::text = 'delivered' THEN $2 ELSE delivered_at END
 		WHERE id = $3 AND deleted_at IS NULL
 		RETURNING ` + shipmentColumns
 	now := time.Now().UTC()

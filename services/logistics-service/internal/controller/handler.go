@@ -70,31 +70,46 @@ var carrierAllowedSortFields = map[string]bool{
 func (c *LogisticsController) CreateShipment(w http.ResponseWriter, r *http.Request) {
 	var req CreateShipmentRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httpresponse.BadRequest(w, "invalid_request", "invalid request body")
+		httpresponse.InvalidBody(w, err.Error())
 		return
 	}
 
 	if req.OrderID == "" {
-		httpresponse.BadRequest(w, "validation_error", "order_id is required")
+		httpresponse.MissingField(w, "order_id",
+			"order UUID string",
+			"Get an order ID via orders_list. The order should be in 'processing' or 'shipped' status.")
 		return
 	}
 	if req.WarehouseID == "" {
-		httpresponse.BadRequest(w, "validation_error", "warehouse_id is required")
+		httpresponse.MissingField(w, "warehouse_id",
+			"warehouse UUID string",
+			"List available warehouses via warehouses_list and pick one with stock for the order items.")
 		return
 	}
 	if req.CarrierID == "" {
-		httpresponse.BadRequest(w, "validation_error", "carrier_id is required")
+		httpresponse.MissingField(w, "carrier_id",
+			"carrier UUID string (must be active)",
+			"List active carriers via carriers_list. Inactive carriers cannot be assigned.")
 		return
 	}
 	if req.Address == "" {
-		httpresponse.BadRequest(w, "validation_error", "address is required")
+		httpresponse.MissingField(w, "address",
+			"delivery address as a free-form string",
+			"Provide the recipient delivery address in 'Street N, City' format (Latin transliteration).",
+			"Khreshchatyk str. 22, Kyiv", "Sahaidachnoho str. 5, Lviv")
 		return
 	}
 
 	created, err := c.svc.CreateShipment(r.Context(), req)
 	if err != nil {
 		if errors.Is(err, carrier.ErrCarrierNotFound) {
-			httpresponse.NotFound(w, "carrier_not_found", "carrier not found")
+			httpresponse.NotFoundError(w, httpresponse.LLMError{
+				Code:       "carrier_not_found",
+				Message:    "carrier with id '" + req.CarrierID + "' was not found or is inactive",
+				Field:      "carrier_id",
+				Received:   req.CarrierID,
+				Suggestion: "Use carriers_list to get a valid active carrier ID.",
+			})
 			return
 		}
 		c.log.Error("Failed to create shipment", zap.Error(err))
@@ -148,29 +163,41 @@ func (c *LogisticsController) ListShipments(w http.ResponseWriter, r *http.Reque
 func (c *LogisticsController) UpdateShipmentStatus(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
-		httpresponse.BadRequest(w, "validation_error", "shipment id is required")
+		httpresponse.MissingField(w, "id (path)",
+			"shipment UUID in URL path",
+			"Specify shipment ID in path: PUT /api/v1/shipments/{id}/status")
 		return
 	}
 
 	var req UpdateShipmentStatusRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httpresponse.BadRequest(w, "invalid_request", "invalid request body")
+		httpresponse.InvalidBody(w, err.Error())
 		return
 	}
 
 	if req.Status == "" {
-		httpresponse.BadRequest(w, "validation_error", "status is required")
+		httpresponse.MissingField(w, "status",
+			"one of 15 valid shipment statuses",
+			"Use shipments_get to see current status, then choose a valid next status.",
+			"label_created", "picked_up", "in_transit", "out_for_delivery", "delivered", "cancelled")
 		return
 	}
 
 	updated, err := c.svc.UpdateShipmentStatus(r.Context(), id, req.Status)
 	if err != nil {
 		if errors.Is(err, shipment.ErrShipmentNotFound) {
-			httpresponse.NotFound(w, "shipment_not_found", "shipment not found")
+			httpresponse.NotFoundError(w, httpresponse.LLMError{
+				Code:       "shipment_not_found",
+				Message:    "shipment with id '" + id + "' was not found",
+				Field:      "id",
+				Received:   id,
+				Suggestion: "Verify the shipment ID via shipments_list or shipments_tracking (tracking_number).",
+			})
 			return
 		}
 		if errors.Is(err, shipment.ErrInvalidTransition) {
-			httpresponse.BadRequest(w, "invalid_transition", "invalid status transition")
+			httpresponse.InvalidTransition(w, "shipment", "(see shipment's current status)", string(req.Status),
+				[]string{"created→label_created", "label_created→awaiting_pickup→picked_up", "picked_up→in_transit", "in_transit↔at_hub", "in_transit→out_for_delivery", "out_for_delivery→delivered|delivery_attempted|held_at_office", "delivery_attempted×3 → returned_to_sender"})
 			return
 		}
 		c.log.Error("Failed to update shipment status", zap.Error(err))
