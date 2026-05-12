@@ -56,7 +56,7 @@ func main() {
 	smsAdapter := delivery.NewSMSAdapter(log.Named("sms"))
 	wsHub := ws.NewHub(log.Named("websocket"))
 
-	svc := controller.NewService(storage, emailAdapter, smsAdapter, wsHub, log.Named("service"))
+	svc := controller.NewService(storage, emailAdapter, smsAdapter, wsHub, nc, log.Named("service"))
 	notifCtrl := controller.NewNotificationController(svc, log.Named("controller"))
 
 	cons := consumer.NewConsumer(svc, nc, log.Named("consumer"))

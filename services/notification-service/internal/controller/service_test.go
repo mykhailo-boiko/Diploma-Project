@@ -184,7 +184,7 @@ func newTestService() (*Service, *mockStorage, *mockWSPusher, *mockDelivery, *mo
 	wsPusher := &mockWSPusher{}
 	email := &mockDelivery{}
 	sms := &mockDelivery{}
-	return NewService(storage, email, sms, wsPusher, zap.NewNop()), storage, wsPusher, email, sms
+	return NewService(storage, email, sms, wsPusher, nil, zap.NewNop()), storage, wsPusher, email, sms
 }
 
 func TestCreateNotification(t *testing.T) {

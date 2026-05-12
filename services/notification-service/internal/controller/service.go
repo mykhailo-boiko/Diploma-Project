@@ -18,20 +18,26 @@ type WebSocketPusher interface {
 	Push(userID string, n notification.Notification)
 }
 
+type EventPublisher interface {
+	Publish(subject, eventType string, data any) error
+}
+
 type Service struct {
 	storage notification.Storage
 	email   DeliveryAdapter
 	sms     DeliveryAdapter
 	ws      WebSocketPusher
+	pub     EventPublisher
 	log     *zap.Logger
 }
 
-func NewService(storage notification.Storage, email, sms DeliveryAdapter, wsPusher WebSocketPusher, log *zap.Logger) *Service {
+func NewService(storage notification.Storage, email, sms DeliveryAdapter, wsPusher WebSocketPusher, pub EventPublisher, log *zap.Logger) *Service {
 	return &Service{
 		storage: storage,
 		email:   email,
 		sms:     sms,
 		ws:      wsPusher,
+		pub:     pub,
 		log:     log,
 	}
 }
@@ -93,6 +99,18 @@ func (s *Service) CreateNotification(ctx context.Context, req CreateNotification
 
 	if s.ws != nil {
 		s.ws.Push(created.UserID, created)
+	}
+
+	if s.pub != nil {
+		if err := s.pub.Publish("notification.created", "notification.created", map[string]any{
+			"notification_id": created.ID,
+			"user_id":         created.UserID,
+			"type":            created.Type,
+			"title":           created.Title,
+			"message":         created.Message,
+		}); err != nil {
+			s.log.Debug("Failed to publish notification.created", zap.Error(err))
+		}
 	}
 
 	s.deliverExternal(ctx, created, pref)
