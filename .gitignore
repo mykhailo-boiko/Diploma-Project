@@ -119,3 +119,5 @@ progress.md
 progress.txt
 tasks.json
 ralph.sh
+.venv-itest/
+PROJECT_CONTEXT.md
