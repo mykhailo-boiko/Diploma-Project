@@ -3,7 +3,6 @@
 import { useApiQuery } from "./api-hooks";
 import { Role } from "./types";
 
-
 interface OrderStats {
   data: {
     total_orders: number;
@@ -109,7 +108,6 @@ interface RecentOrdersResponse {
   meta: { total: number };
 }
 
-
 function dateRange30d() {
   const to = new Date();
   const from = new Date();
@@ -117,7 +115,6 @@ function dateRange30d() {
   const fmt = (d: Date) => d.toISOString().slice(0, 10);
   return `date_from=${fmt(from)}&date_to=${fmt(to)}`;
 }
-
 
 export function useOrderStats(enabled: boolean) {
   return useApiQuery<OrderStats>(
@@ -202,7 +199,6 @@ export function useRecentOrders(enabled: boolean) {
     { enabled },
   );
 }
-
 
 const ROLE_SECTIONS: Record<Role, string[]> = {
   admin: ["orders", "inventory", "logistics", "analytics", "notifications"],

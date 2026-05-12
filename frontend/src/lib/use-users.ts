@@ -3,7 +3,6 @@
 import { useApiQuery, useApiMutation, type PaginatedResponse, type SingleResponse } from "./api-hooks";
 import type { Role } from "./types";
 
-
 export interface UserFull {
   id: string;
   email: string;
@@ -31,7 +30,6 @@ export interface UpdateUserInput {
   role?: Role;
 }
 
-
 export interface UserListParams {
   page: number;
   pageSize: number;
@@ -55,7 +53,6 @@ function buildUserListPath(params: UserListParams): string {
   if (params.name) sp.set("name", params.name);
   return `/api/v1/users?${sp.toString()}`;
 }
-
 
 export function useUsers(params: UserListParams) {
   return useApiQuery<PaginatedResponse<UserFull>>(

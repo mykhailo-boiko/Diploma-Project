@@ -86,7 +86,6 @@ export default function DashboardPage() {
   );
 }
 
-
 function KPIRow({ role }: { role: Role }) {
   const orderStats = useOrderStats(canSee(role, "orders"));
   const unread = useUnreadCount();
@@ -161,7 +160,6 @@ function KPIRow({ role }: { role: Role }) {
     </div>
   );
 }
-
 
 function OrdersSection() {
   const orderStats = useOrderStats(true);
@@ -243,7 +241,6 @@ function OrdersSection() {
     </div>
   );
 }
-
 
 function AnalyticsSection() {
   const trends = useSalesTrends(true);
@@ -337,7 +334,6 @@ function AnalyticsSection() {
     </div>
   );
 }
-
 
 function InventorySection() {
   const inventorySummary = useInventorySummary(true);
@@ -449,7 +445,6 @@ function InventorySection() {
     </div>
   );
 }
-
 
 function LogisticsSection() {
   const perf = useLogisticsPerformance(true);
@@ -570,7 +565,6 @@ function LogisticsSection() {
     </div>
   );
 }
-
 
 function MiniStat({
   icon: Icon,

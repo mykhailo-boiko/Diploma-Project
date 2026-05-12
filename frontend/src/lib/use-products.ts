@@ -2,7 +2,6 @@
 
 import { useApiQuery, useApiMutation, type PaginatedResponse, type SingleResponse } from "./api-hooks";
 
-
 export interface Product {
   id: string;
   sku: string;
@@ -31,7 +30,6 @@ export interface UpdateProductInput {
   unit_price: number;
 }
 
-
 export interface ProductListParams {
   page: number;
   pageSize: number;
@@ -55,7 +53,6 @@ function buildProductListPath(params: ProductListParams): string {
   if (params.category) sp.set("category", params.category);
   return `/api/v1/products?${sp.toString()}`;
 }
-
 
 export function useProducts(params: ProductListParams) {
   return useApiQuery<PaginatedResponse<Product>>(

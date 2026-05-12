@@ -175,7 +175,6 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
                 ),
                 td: ({ children }) => {
                   const text = String(children ?? "");
-                  // Truncate long UUIDs / IDs visually but keep full on hover
                   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(text.trim());
                   if (isUuid) {
                     return (
@@ -245,7 +244,6 @@ export default function ChatPanel({ open, onClose }: ChatPanelProps) {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isThinking]);
 
-  // Drag resize
   const startResize = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     setIsResizing(true);
@@ -256,7 +254,7 @@ export default function ChatPanel({ open, onClose }: ChatPanelProps) {
     function onMouseMove(e: MouseEvent) {
       const w = Math.max(360, Math.min(window.innerWidth - 80, window.innerWidth - e.clientX));
       setCustomWidth(w);
-      setWidthMode("compact"); // mark as custom-controlled
+      setWidthMode("compact");
     }
     function onMouseUp() {
       setIsResizing(false);
@@ -303,7 +301,6 @@ export default function ChatPanel({ open, onClose }: ChatPanelProps) {
     el.style.height = Math.min(el.scrollHeight, 160) + "px";
   }
 
-  // Compute panel width
   let panelStyle: React.CSSProperties = {};
   if (widthMode === "fullscreen") {
     panelStyle.width = "min(1280px, 95vw)";
@@ -344,7 +341,7 @@ export default function ChatPanel({ open, onClose }: ChatPanelProps) {
           isResizing && "select-none",
         )}
       >
-        {/* Resize handle */}
+        {}
         <div
           onMouseDown={startResize}
           className="group absolute left-0 top-0 z-10 flex h-full w-1.5 cursor-col-resize items-center justify-center hover:bg-blue-500/20"
@@ -353,7 +350,7 @@ export default function ChatPanel({ open, onClose }: ChatPanelProps) {
           <div className="h-12 w-1 rounded-full bg-gray-300 opacity-0 transition-opacity group-hover:opacity-100" />
         </div>
 
-        {/* Header */}
+        {}
         <div className="flex h-14 items-center justify-between border-b border-gray-200 bg-white/80 px-4 backdrop-blur">
           <div className="flex items-center gap-2.5">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-violet-500 to-blue-600 shadow">
@@ -368,7 +365,7 @@ export default function ChatPanel({ open, onClose }: ChatPanelProps) {
             </div>
           </div>
           <div className="flex items-center gap-1">
-            {/* Width controls */}
+            {}
             <div className="mr-1 hidden items-center gap-0.5 rounded-md bg-gray-100 p-0.5 md:flex">
               <button
                 onClick={() => setMode("compact")}
@@ -435,7 +432,7 @@ export default function ChatPanel({ open, onClose }: ChatPanelProps) {
           </div>
         </div>
 
-        {/* Messages */}
+        {}
         <div className="flex-1 overflow-y-auto px-4 py-4">
           <div className="mx-auto flex max-w-4xl flex-col gap-4">
             {messages.length === 0 && status === "connected" && (
@@ -500,7 +497,7 @@ export default function ChatPanel({ open, onClose }: ChatPanelProps) {
           </div>
         </div>
 
-        {/* Input */}
+        {}
         <div className="border-t border-gray-200 bg-white p-3">
           <div className="mx-auto max-w-4xl">
             {status !== "connected" ? (

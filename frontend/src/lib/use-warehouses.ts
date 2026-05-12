@@ -2,7 +2,6 @@
 
 import { useApiQuery, useApiMutation, type PaginatedResponse, type SingleResponse } from "./api-hooks";
 
-
 export interface Warehouse {
   id: string;
   name: string;
@@ -24,7 +23,6 @@ export interface UpdateWarehouseInput {
   is_active: boolean;
 }
 
-
 export interface WarehouseListParams {
   page: number;
   pageSize: number;
@@ -44,7 +42,6 @@ function buildWarehouseListPath(params: WarehouseListParams): string {
   if (params.name) sp.set("name", params.name);
   return `/api/v1/warehouses?${sp.toString()}`;
 }
-
 
 export function useWarehouses(params: WarehouseListParams) {
   return useApiQuery<PaginatedResponse<Warehouse>>(

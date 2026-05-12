@@ -2,7 +2,6 @@
 
 import { useApiQuery, useApiMutation, type PaginatedResponse, type SingleResponse } from "./api-hooks";
 
-
 export interface Carrier {
   id: string;
   name: string;
@@ -26,7 +25,6 @@ export interface UpdateCarrierInput {
   is_active: boolean;
 }
 
-
 export interface CarrierListParams {
   page: number;
   pageSize: number;
@@ -48,7 +46,6 @@ function buildCarrierListPath(params: CarrierListParams): string {
   if (params.name) sp.set("name", params.name);
   return `/api/v1/carriers?${sp.toString()}`;
 }
-
 
 export function useCarriers(params: CarrierListParams) {
   return useApiQuery<PaginatedResponse<Carrier>>(

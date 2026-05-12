@@ -2,7 +2,6 @@
 
 import { useApiQuery, useApiMutation, type PaginatedResponse, type SingleResponse } from "./api-hooks";
 
-
 export interface Stock {
   id: string;
   product_id: string;
@@ -49,7 +48,6 @@ export interface InventoryReport {
   by_category: { category: string; total_quantity: number; total_reserved: number; total_available: number; product_count: number }[];
 }
 
-
 export interface StockListParams {
   page: number;
   pageSize: number;
@@ -95,7 +93,6 @@ function buildMovementListPath(params: MovementListParams): string {
   if (params.type) sp.set("type", params.type);
   return `/api/v1/stock/movements?${sp.toString()}`;
 }
-
 
 export function useStock(params: StockListParams) {
   return useApiQuery<PaginatedResponse<Stock>>(

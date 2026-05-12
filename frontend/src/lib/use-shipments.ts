@@ -2,7 +2,6 @@
 
 import { useApiQuery, useApiMutation, type PaginatedResponse, type SingleResponse } from "./api-hooks";
 
-
 export interface AddressDetails {
   full_name?: string;
   phone?: string;
@@ -62,7 +61,6 @@ export interface Timeline {
   delivery_attempts: DeliveryAttempt[];
 }
 
-
 export interface ShipmentListParams {
   page: number;
   pageSize: number;
@@ -92,7 +90,6 @@ function buildShipmentListPath(params: ShipmentListParams): string {
   if (params.dateTo) sp.set("date_to", params.dateTo);
   return `/api/v1/shipments?${sp.toString()}`;
 }
-
 
 export function useShipments(params: ShipmentListParams) {
   return useApiQuery<PaginatedResponse<Shipment>>(

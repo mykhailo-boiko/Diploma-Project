@@ -2,7 +2,6 @@
 
 import { useApiQuery, useApiMutation, type PaginatedResponse, type SingleResponse } from "./api-hooks";
 
-
 export interface OrderItem {
   id: string;
   order_id: string;
@@ -35,7 +34,6 @@ export interface CreateOrderInput {
   items: { product_id: string; name: string; quantity: number; unit_price: number }[];
 }
 
-
 export interface OrderListParams {
   page: number;
   pageSize: number;
@@ -61,7 +59,6 @@ function buildOrderListPath(params: OrderListParams): string {
   if (params.customerName) sp.set("customer_name", params.customerName);
   return `/api/v1/orders?${sp.toString()}`;
 }
-
 
 export function useOrders(params: OrderListParams) {
   return useApiQuery<PaginatedResponse<Order>>(

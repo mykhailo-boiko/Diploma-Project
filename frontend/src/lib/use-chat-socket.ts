@@ -183,7 +183,6 @@ export function useChatSocket() {
               return copy;
             });
           } catch {
-            // ignore malformed plan payload
           }
           return;
         }
@@ -247,7 +246,11 @@ export function useChatSocket() {
         },
       ]);
 
-      wsRef.current.send(JSON.stringify({ message: text }));
+      const trace_id =
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `trace-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      wsRef.current.send(JSON.stringify({ message: text, trace_id }));
     },
     [],
   );

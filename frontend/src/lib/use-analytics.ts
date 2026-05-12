@@ -2,7 +2,6 @@
 
 import { useApiQuery, useApiMutation, type SingleResponse } from "./api-hooks";
 
-
 export interface SalesSummary {
   total_revenue: number;
   order_count: number;
@@ -70,14 +69,12 @@ export interface Report {
   data: unknown;
 }
 
-
 function dateRangeParams(dateFrom?: string, dateTo?: string): string {
   const sp = new URLSearchParams();
   if (dateFrom) sp.set("date_from", dateFrom);
   if (dateTo) sp.set("date_to", dateTo);
   return sp.toString();
 }
-
 
 export function useSalesSummary(dateFrom: string, dateTo: string) {
   const qs = dateRangeParams(dateFrom, dateTo);

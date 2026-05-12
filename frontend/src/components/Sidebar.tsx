@@ -14,6 +14,7 @@ import {
   BarChart3,
   Bell,
   Users,
+  Activity,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
@@ -31,6 +32,7 @@ const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   BarChart3,
   Bell,
   Users,
+  Activity,
 };
 
 interface SidebarProps {

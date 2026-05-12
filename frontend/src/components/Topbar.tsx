@@ -7,13 +7,15 @@ import { useAuthStore } from "@/stores/auth";
 import { formatRole } from "@/lib/roles";
 import { useUnreadCount } from "@/lib/use-notifications";
 import { clsx } from "clsx";
+import LiveIndicator from "./LiveIndicator";
 
 interface TopbarProps {
   onToggleChat?: () => void;
   chatOpen?: boolean;
+  onToggleFeed?: () => void;
 }
 
-export default function Topbar({ onToggleChat, chatOpen }: TopbarProps) {
+export default function Topbar({ onToggleChat, chatOpen, onToggleFeed }: TopbarProps) {
   const router = useRouter();
   const { user, logout } = useAuthStore();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -41,7 +43,9 @@ export default function Topbar({ onToggleChat, chatOpen }: TopbarProps) {
 
   return (
     <header className="flex h-16 items-center justify-between border-b border-gray-200 bg-white px-6">
-      <div />
+      <div className="flex items-center gap-3">
+        <LiveIndicator onToggleFeed={onToggleFeed} />
+      </div>
 
       <div className="flex items-center gap-4">
         <button

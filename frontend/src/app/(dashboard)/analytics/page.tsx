@@ -261,7 +261,6 @@ export default function AnalyticsPage() {
   );
 }
 
-
 function KPICard({
   icon,
   title,

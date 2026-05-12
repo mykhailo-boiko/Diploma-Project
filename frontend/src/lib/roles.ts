@@ -80,6 +80,12 @@ export const navItems: NavItem[] = [
     icon: "Users",
     roles: ["admin"],
   },
+  {
+    label: "Simulator",
+    href: "/admin/simulator",
+    icon: "Activity",
+    roles: ["admin"],
+  },
 ];
 
 export function getNavItemsForRole(role: Role): NavItem[] {

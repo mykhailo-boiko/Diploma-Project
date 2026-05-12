@@ -2,7 +2,6 @@
 
 import { useApiQuery, useApiMutation, type PaginatedResponse, type SingleResponse } from "./api-hooks";
 
-
 export interface Notification {
   id: string;
   user_id: string;
@@ -49,7 +48,6 @@ export interface UpdatePreferenceInput {
   sms: boolean;
 }
 
-
 export interface NotificationListParams {
   page: number;
   pageSize: number;
@@ -63,7 +61,6 @@ function buildNotificationListPath(params: NotificationListParams): string {
   if (params.type) sp.set("type", params.type);
   return `/api/v1/notifications?${sp.toString()}`;
 }
-
 
 export function useNotifications(params: NotificationListParams) {
   return useApiQuery<PaginatedResponse<Notification>>(
