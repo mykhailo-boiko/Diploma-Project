@@ -6,7 +6,7 @@ Enterprise-grade supply chain management platform with an AI orchestration layer
 
 - **6 microservices** (Go): Orders, Inventory, Logistics, Analytics, Notifications, Users
 - **API Gateway** with JWT authentication, RBAC, rate limiting, CORS
-- **MCP Orchestrator** (Python/FastMCP): 76 tools spanning all business domains
+- **MCP Orchestrator** (Python/FastMCP): 87 tools spanning all business domains
 - **MCP Host** (Python/FastAPI): WebSocket chat with Google Gemini LLM integration
 - **Frontend** (Next.js 16, React 19, TypeScript): role-aware dashboard, data tables, charts, real-time chat
 - **Event-driven architecture**: NATS for inter-service communication
@@ -28,7 +28,7 @@ flowchart TB
     end
 
     subgraph ai["AI orchestration"]
-        MCPOrch["MCP Orchestrator<br/>FastMCP · 76 tools<br/>stdio subprocess"]
+        MCPOrch["MCP Orchestrator<br/>FastMCP · 87 tools<br/>stdio subprocess"]
     end
 
     subgraph svc["Microservices (Go)"]
@@ -193,7 +193,7 @@ chainorchestra/
 │   ├── pagination/             # Page, Sort, Filter types
 │   ├── postgres/               # pgx connection pool
 │   └── validate/               # Validation wrapper
-├── mcp-orchestrator/           # MCP Server (Python) — 63 tool definitions
+├── mcp-orchestrator/           # MCP Server (Python) — 87 tool definitions
 ├── mcp-host/                   # MCP Host (Python) — WebSocket, Gemini, RBAC
 ├── frontend/                   # Next.js web application
 ├── scripts/                    # Seed data, E2E tests
@@ -210,7 +210,7 @@ chainorchestra/
 
 - [Architecture Diagram](docs/architecture.md) — system components and data flow (Mermaid)
 - [API Reference](docs/api-reference.md) — all REST endpoints per service
-- [MCP Tools Reference](docs/mcp-tools.md) — complete catalog of 76 MCP tools
+- [MCP Tools Reference](docs/mcp-tools.md) — complete catalog of 87 MCP tools
 
 ## Running Tests
 

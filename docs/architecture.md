@@ -16,7 +16,7 @@ graph TB
     end
 
     subgraph "AI Layer"
-        MO["MCP Orchestrator<br/>(FastMCP)<br/>63 tools"]
+        MO["MCP Orchestrator<br/>(FastMCP)<br/>87 tools"]
         LLM["Google Gemini<br/>LLM"]
     end
 

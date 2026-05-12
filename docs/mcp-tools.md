@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-The MCP Orchestrator exposes **63 tools** across 6 service domains. Tools are registered via [FastMCP](https://github.com/modelcontextprotocol/python-sdk) and called by the Gemini LLM through the MCP Host.
+The MCP Orchestrator exposes **87 tools** across 6 service domains. Tools are registered via [FastMCP](https://github.com/modelcontextprotocol/python-sdk) and called by the Gemini LLM through the MCP Host.
 
 ## RBAC Tool Access
 
@@ -18,7 +18,7 @@ Tools are filtered by user role **before** being sent to the LLM:
 
 ---
 
-## Orders (7 tools)
+## Orders (10 tools)
 
 ### orders_list
 List orders with optional filters and pagination.
@@ -76,6 +76,39 @@ Search orders by customer name or order ID. Minimum 2 characters.
 Get order statistics: total count, total revenue, and breakdown by status.
 
 *No parameters.*
+
+### orders_bulk_update_status
+Update status for many orders in ONE server-side call with per-order success/failure report.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| order_ids | list[str] | UUIDs (max 500 per call) |
+| status | str | Target status |
+| note | str (optional) | Service comment (stored in cancel_reason) |
+| dry_run | bool (default false) | Preview without writes |
+
+Returns `{total, dry_run, updated_ids, successes[], failures[]}`.
+
+### orders_sales_by_product
+Per-SKU sales aggregate for a date range: units_sold, revenue, order_count, daily_demand.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| date_from | str | YYYY-MM-DD inclusive |
+| date_to | str | YYYY-MM-DD inclusive |
+| statuses | str (optional) | CSV order statuses to include |
+| limit | int (default 0) | Cap on rows |
+
+### orders_customer_summary
+Per-customer aggregate with lifetime + window metrics + new_in_window flag.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| date_from, date_to | str (optional) | Optional window for orders_in_window/revenue_in_window |
+| only_new | bool (default false) | Customers whose first-ever order is in the window |
+| sort_by | str | revenue / revenue_in_window / orders / last_order / first_order |
+| sort_order | str | asc \| desc |
+| limit | int | Cap on rows |
 
 ---
 
@@ -256,7 +289,7 @@ Get comprehensive inventory report with totals by warehouse and category.
 
 ---
 
-## Shipments (5 tools)
+## Shipments (17 tools)
 
 ### shipments_list
 List shipments with optional filters.
@@ -305,6 +338,102 @@ Bulk status update. Supports partial failure (207 Multi-Status).
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `updates` | list[dict] | Yes | Each: `{shipment_id, status}` |
+
+### shipments_tracking
+Full postal tracking record by human-readable tracking number (e.g. `CO-2026-K7H2P9`). Returns `{shipment, events[], delivery_attempts[]}`.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| tracking_number | str | Tracking code (not the UUID) |
+
+### shipments_timeline
+Same as `shipments_tracking` but by internal UUID.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| shipment_id | str | Internal UUID |
+
+### shipments_update_recipient
+PATCH semantics — only provided fields change. Phone E.164 validated. Allowed until status=delivered.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| shipment_id | str | Shipment UUID |
+| full_name, phone, email, company, street, city, region, postcode, country, delivery_notes | str (optional) | Any subset |
+
+### shipments_update_sender
+PATCH semantics for sender side. Same shape as `shipments_update_recipient`.
+
+### shipments_add_event
+Append a manual tracking checkpoint to the timeline.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| shipment_id | str | Shipment UUID |
+| event_type | str | label_created / picked_up / hub_arrived / out_for_delivery / customs_clearance / exception / etc. |
+| location_city, location_hub, notes | str (optional) | Context |
+
+### shipments_reschedule
+Move estimated_delivery_at; writes a `rescheduled` event.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| shipment_id | str | Shipment UUID |
+| new_eta | str | RFC3339 timestamp |
+| reason | str (optional) | Human-readable reason |
+
+### shipments_redirect
+Change destination address mid-flight. Sets status=`redirected`, writes a `redirected` event. Refused if delivered/returned/cancelled.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| shipment_id | str | Shipment UUID |
+| new_address | dict | At minimum `{street, city}`; may include phone/email/postcode/etc. |
+| reason | str (optional) | Reason |
+
+### shipments_hold_for_pickup
+Switch to `held_at_office` — recipient must pick up.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| shipment_id | str | Shipment UUID |
+| office_address | str | Pickup-point address |
+| reason | str (optional) | Reason |
+
+### shipments_record_attempt
+Log a failed delivery attempt. Auto-bumps attempt_number; on the 3rd attempt status → `returned_to_sender` automatically.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| shipment_id | str | Shipment UUID |
+| reason | str | no_one_home / address_invalid / refused / undeliverable / locked_building |
+| notes | str (optional) | Free-text |
+| next_attempt_at | str (optional) | RFC3339 |
+
+### shipments_record_delivery
+Confirm delivery: status → `delivered`, captures signature + photo URL.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| shipment_id | str | Shipment UUID |
+| signature_name | str | Person who signed |
+| photo_url | str (optional) | Proof-of-delivery URL |
+
+### shipments_in_transit_summary
+Operational dashboard — all shipments NOT yet delivered/returned/cancelled (label_created → out_for_delivery + redirected/held).
+
+*No parameters.* Returns aggregated list across in-flight statuses.
+
+### shipments_reassign_carrier
+Bulk-reassign shipments from one carrier to another, optionally filtered by destination city.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| from_carrier_id | str | Source carrier UUID |
+| to_carrier_id | str | Target carrier UUID |
+| city | str (optional) | Filter by destination city (ILIKE) |
+| statuses | list[str] (optional) | Defaults to `[created, picked_up, in_transit]` |
+| dry_run | bool (default false) | Preview only |
 
 ---
 
@@ -378,7 +507,7 @@ Returns: `{total_delivered, on_time, late, on_time_rate}`
 
 ---
 
-## Analytics (10 tools)
+## Analytics (16 tools)
 
 ### analytics_sales
 Get daily sales data for a date range.
@@ -469,9 +598,101 @@ Generate a custom analytics report.
 | `date_from` | string | Yes | YYYY-MM-DD |
 | `date_to` | string | Yes | YYYY-MM-DD |
 
+### analytics_carriers_performance
+Per-carrier on-time rate + worst-cities breakdown. Sorted ASC by on_time_rate (worst first).
+
+| Param | Type | Description |
+|-------|------|-------------|
+| date_from, date_to | str | YYYY-MM-DD inclusive |
+| sla_hours | int (default 168) | Cutoff for on-time vs late |
+| worst_cities | int (default 5) | Top N cities per carrier |
+
+### analytics_quick_cancellations
+Forensic: orders cancelled within `max_minutes` after their shipment was created, grouped by carrier × destination city.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| date_from, date_to | str | Window YYYY-MM-DD |
+| max_minutes | int (default 60) | Cutoff for "quick" cancellation |
+
+### analytics_rebalancing_recommendations
+Cross-warehouse stock rebalancing with explicit cost model. Best donor per (SKU, acceptor), ranked by net_benefit.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| overstock_multiplier | float (default 3.0) | Donor if quantity > min_threshold × this |
+| holding_daily_rate | float (default 0.0005) | Carrying cost rate per day |
+| holding_horizon_days | int (default 30) | Holding-savings amortization |
+| transfer_base_fee | float (default 50.0) | Fixed dispatch fee |
+| transfer_per_unit | float (default 1.5) | Variable cost per unit |
+| include_unprofitable | bool (default false) | Include negative-ROI rows |
+| limit | int (default 50) | Cap on rows |
+
+### analytics_period_comparison
+Compare a metric between two arbitrary date windows. Returns absolute delta, % change, direction, significance label.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| metric | str | revenue / order_count / aov / cancellation_rate / on_time_rate / shipment_count / low_stock_count |
+| a_from, a_to | str | Baseline window (YYYY-MM-DD) |
+| b_from, b_to | str | Comparison window |
+| a_label, b_label | str (optional) | Human-readable labels (e.g. "Q1 2026") |
+
+### analytics_forecast
+Server-side time-series projection with confidence band + backtest MAPE.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| metric | str | revenue / order_count / shipment_count |
+| horizon_days | int (default 14) | Days to project forward |
+| history_days | int (default 30) | Trailing window used to fit |
+| method | str (default linear) | linear / rolling-avg / ets-simple |
+
+### analytics_what_if
+Counterfactual simulator with assumptions and qualitative confidence.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| kind | str | carrier_drop / capacity_increase / price_change / promo_burst |
+| params | dict | Scenario-specific (see tool docstring) |
+
+Returns `{scenario, baseline, projected, delta, delta_percent, assumptions[], confidence_qualitative, human_summary}`.
+
 ---
 
-## Notifications (7 tools)
+## Customers (1 tool)
+
+### customers_profile_360
+Executive-grade single-customer dossier in ONE call: lifetime aggregates, churn risk, top categories, recent orders, status mix.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| customer_name | str | Exact customer name |
+| recent_n | int (default 5) | Most-recent orders to include |
+| top_categories_n | int (default 5) | Top spending categories |
+
+Returns `{customer_name, first_order_date, last_order_date, lifetime_value, order_count, avg_order_value, days_since_last_order, median_inter_order_days, churn_risk_score, status_breakdown, top_categories[], recent_orders[], is_new_customer_90_days}`.
+
+---
+
+## Audit (1 tool)
+
+### audit_query
+Query the audit trail of write operations across the platform.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| actor_email | str (optional) | Filter to one actor |
+| action | str (optional) | Exact action name (e.g. `orders.bulk_update_status`) |
+| entity_id | str (optional) | Entity ID touched by the action |
+| date_from, date_to | str (optional) | YYYY-MM-DD window |
+| limit | int (default 50, max 500) | Cap on rows |
+
+Each entry: `{actor_user_id, actor_email, actor_role, service_name, action, entity_type, entity_ids, params_snip, result_status, success_count, failure_count, error_message, created_at}`.
+
+---
+
+## Notifications (8 tools)
 
 ### notifications_list
 List notifications for the current user.
@@ -505,6 +726,15 @@ Mark a notification as read.
 Get unread notification count for current user.
 
 *No parameters.*
+
+### notifications_unread_counts
+Admin-only: unread counts for every user, enriched with email/name/role. Filterable by role.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| role | str (optional) | admin / warehouse_manager / logistics_manager / analyst / operator |
+
+Returns rows sorted by unread_count descending.
 
 ### notifications_preferences_get
 Get notification preferences (per-type channel toggles).
@@ -638,16 +868,18 @@ Soft-delete a user (admin only).
 
 | Domain | Tools |
 |--------|-------|
-| Orders | 7 |
+| Orders | 10 |
 | Products | 5 |
 | Warehouses | 4 |
 | Stock | 7 |
 | Inventory Report | 1 |
-| Shipments | 5 |
+| Shipments | 17 |
 | Carriers | 4 |
 | Routes | 1 |
 | Logistics Performance | 1 |
-| Analytics | 10 |
-| Notifications | 7 |
+| Analytics | 16 |
+| Customers | 1 |
+| Audit | 1 |
+| Notifications | 8 |
 | Users | 11 |
-| **Total** | **63** |
+| **Total** | **87** |
