@@ -199,7 +199,6 @@ func (s *Service) BulkUpdateStatus(ctx context.Context, orderIDs []string, newSt
 	return result, nil
 }
 
-
 func (s *Service) publishOrderCreated(o order.Order) {
 	if s.nc == nil {
 		return

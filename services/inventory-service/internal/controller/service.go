@@ -25,7 +25,6 @@ func NewService(products product.Storage, warehouses warehouse.Storage, stocks s
 	return &Service{products: products, warehouses: warehouses, stocks: stocks, nc: nc, log: log}
 }
 
-
 type CreateProductRequest struct {
 	SKU         string  `json:"sku"`
 	Name        string  `json:"name"`
@@ -41,7 +40,6 @@ type UpdateProductRequest struct {
 	UnitPrice   float64 `json:"unit_price"`
 }
 
-
 type CreateWarehouseRequest struct {
 	Name    string `json:"name"`
 	Address string `json:"address"`
@@ -52,7 +50,6 @@ type UpdateWarehouseRequest struct {
 	Address  string `json:"address"`
 	IsActive bool   `json:"is_active"`
 }
-
 
 func (s *Service) CreateProduct(ctx context.Context, req CreateProductRequest) (product.Product, error) {
 	p := product.Product{
@@ -100,7 +97,6 @@ func (s *Service) DeleteProduct(ctx context.Context, id string) error {
 	return s.products.DeleteProduct(ctx, id)
 }
 
-
 func (s *Service) CreateWarehouse(ctx context.Context, req CreateWarehouseRequest) (warehouse.Warehouse, error) {
 	w := warehouse.Warehouse{
 		Name:    req.Name,
@@ -138,7 +134,6 @@ func (s *Service) UpdateWarehouse(ctx context.Context, id string, req UpdateWare
 
 	return updated, nil
 }
-
 
 type ReserveStockRequest struct {
 	ProductID   string `json:"product_id"`

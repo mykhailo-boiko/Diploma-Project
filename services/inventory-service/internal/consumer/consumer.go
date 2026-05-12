@@ -50,6 +50,5 @@ func (c *Consumer) handleOrderCancelled(ev natspkg.Event) error {
 		zap.String("reason", data.Reason),
 	)
 
-
 	return nil
 }

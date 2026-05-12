@@ -201,8 +201,8 @@ func TestOrderController_UpdateStatus_InvalidTransition(t *testing.T) {
 
 	ctrl.UpdateStatus(rec, req)
 
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusConflict {
+		t.Errorf("expected 409 (invalid transition), got %d: %s", rec.Code, rec.Body.String())
 	}
 }
 

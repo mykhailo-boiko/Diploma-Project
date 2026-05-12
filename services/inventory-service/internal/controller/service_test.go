@@ -15,7 +15,6 @@ import (
 	"github.com/haradrim/chainorchestra/services/inventory-service/internal/warehouse"
 )
 
-
 type mockProductStorage struct {
 	mu       sync.Mutex
 	products map[string]product.Product
@@ -91,7 +90,6 @@ func (m *mockProductStorage) DeleteProduct(_ context.Context, id string) error {
 	return nil
 }
 
-
 type mockWarehouseStorage struct {
 	mu         sync.Mutex
 	warehouses map[string]warehouse.Warehouse
@@ -149,7 +147,6 @@ func (m *mockWarehouseStorage) UpdateWarehouse(_ context.Context, w warehouse.Wa
 	m.warehouses[w.ID] = existing
 	return existing, nil
 }
-
 
 type mockStockStorage struct {
 	mu        sync.Mutex
@@ -353,7 +350,6 @@ func (m *mockStockStorage) seedStock(productID, warehouseID string, quantity, re
 	}
 }
 
-
 func newTestService() (*Service, *mockProductStorage, *mockWarehouseStorage, *mockStockStorage) {
 	ps := newMockProductStorage()
 	ws := newMockWarehouseStorage()
@@ -361,7 +357,6 @@ func newTestService() (*Service, *mockProductStorage, *mockWarehouseStorage, *mo
 	log := zap.NewNop()
 	return NewService(ps, ws, ss, nil, log), ps, ws, ss
 }
-
 
 func TestCreateProduct(t *testing.T) {
 	svc, _, _, _ := newTestService()
@@ -515,7 +510,6 @@ func TestListProducts(t *testing.T) {
 	}
 }
 
-
 func TestCreateWarehouse(t *testing.T) {
 	svc, _, _, _ := newTestService()
 
@@ -613,7 +607,6 @@ func TestListWarehouses(t *testing.T) {
 	}
 }
 
-
 func TestListStock_Empty(t *testing.T) {
 	svc, _, _, _ := newTestService()
 
@@ -629,7 +622,6 @@ func TestListStock_Empty(t *testing.T) {
 		t.Errorf("expected 0 stocks, got %d", len(stocks))
 	}
 }
-
 
 func TestReserveStock_Success(t *testing.T) {
 	svc, _, _, ss := newTestService()

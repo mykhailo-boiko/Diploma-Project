@@ -48,21 +48,42 @@ var allowedSortFields = map[string]bool{
 func (c *OrderController) Create(w http.ResponseWriter, r *http.Request) {
 	var req CreateOrderRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httpresponse.BadRequest(w, "invalid_request", "invalid request body")
+		httpresponse.InvalidBody(w, err.Error())
 		return
 	}
 
 	if req.CustomerName == "" {
-		httpresponse.BadRequest(w, "validation_error", "customer_name is required")
+		httpresponse.MissingField(w, "customer_name",
+			"non-empty string (full customer name)",
+			"Provide the full customer name (Latin transliteration). Example: 'Yuliia Morozenko'",
+			"Yuliia Morozenko", "John Doe")
 		return
 	}
 	if len(req.Items) == 0 {
-		httpresponse.BadRequest(w, "validation_error", "at least one item is required")
+		httpresponse.MissingField(w, "items",
+			"non-empty array of order items",
+			"At least one item is required. Each item needs product_id, name, quantity > 0, unit_price > 0.")
 		return
 	}
-	for _, item := range req.Items {
-		if item.Name == "" || item.Quantity <= 0 || item.UnitPrice <= 0 {
-			httpresponse.BadRequest(w, "validation_error", "each item must have a name, quantity > 0, and unit_price > 0")
+	for i, item := range req.Items {
+		if item.Name == "" {
+			httpresponse.MissingField(w, "items["+strconv.Itoa(i)+"].name",
+				"non-empty product name string",
+				"Each item must include the product name.")
+			return
+		}
+		if item.Quantity <= 0 {
+			httpresponse.InvalidField(w, "items["+strconv.Itoa(i)+"].quantity",
+				"positive integer (> 0)", item.Quantity,
+				"Quantity must be greater than 0. Use 1 for a single unit.",
+				"1", "5", "10")
+			return
+		}
+		if item.UnitPrice <= 0 {
+			httpresponse.InvalidField(w, "items["+strconv.Itoa(i)+"].unit_price",
+				"positive number (> 0)", item.UnitPrice,
+				"Unit price must be greater than 0. Use the product's unit_price from products_list/products_get.",
+				"19.99", "499.00")
 			return
 		}
 	}
@@ -120,29 +141,40 @@ func (c *OrderController) List(w http.ResponseWriter, r *http.Request) {
 func (c *OrderController) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
-		httpresponse.BadRequest(w, "validation_error", "order id is required")
+		httpresponse.MissingField(w, "id (path)",
+			"order UUID in path",
+			"Specify the order ID in the URL path: PUT /api/v1/orders/{id}/status")
 		return
 	}
 
 	var req UpdateStatusRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httpresponse.BadRequest(w, "invalid_request", "invalid request body")
+		httpresponse.InvalidBody(w, err.Error())
 		return
 	}
 
 	if req.Status == "" {
-		httpresponse.BadRequest(w, "validation_error", "status is required")
+		httpresponse.MissingField(w, "status",
+			"one of: pending, confirmed, processing, shipped, delivered, completed, cancelled, returned",
+			"Specify the target status. Check the current status with orders_get before transitioning.",
+			"confirmed", "processing", "shipped", "delivered", "cancelled")
 		return
 	}
 
 	updated, err := c.svc.UpdateOrderStatus(r.Context(), id, req.Status)
 	if err != nil {
 		if errors.Is(err, order.ErrOrderNotFound) {
-			httpresponse.NotFound(w, "order_not_found", "order not found")
+			httpresponse.NotFoundError(w, httpresponse.LLMError{
+				Message:    "order with id '" + id + "' was not found",
+				Field:      "id",
+				Received:   id,
+				Suggestion: "Verify the order exists using orders_list or orders_search before updating its status. The ID may be wrong, deleted (soft-deleted), or belong to a different scope.",
+			})
 			return
 		}
 		if errors.Is(err, order.ErrInvalidTransition) {
-			httpresponse.BadRequest(w, "invalid_transition", "invalid status transition")
+			httpresponse.InvalidTransition(w, "order", "(see order's current status)", string(req.Status),
+				[]string{"pending→confirmed", "confirmed→processing", "processing→shipped", "shipped→delivered", "delivered→completed", "* →cancelled (from non-terminal)"})
 			return
 		}
 		c.log.Error("Failed to update order status", zap.Error(err))
@@ -156,29 +188,44 @@ func (c *OrderController) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 func (c *OrderController) Cancel(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
-		httpresponse.BadRequest(w, "validation_error", "order id is required")
+		httpresponse.MissingField(w, "id (path)",
+			"order UUID in path",
+			"Specify the order ID in the URL path: POST /api/v1/orders/{id}/cancel")
 		return
 	}
 
 	var req CancelOrderRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httpresponse.BadRequest(w, "invalid_request", "invalid request body")
+		httpresponse.InvalidBody(w, err.Error())
 		return
 	}
 
 	if req.Reason == "" {
-		httpresponse.BadRequest(w, "validation_error", "reason is required")
+		httpresponse.MissingField(w, "reason",
+			"non-empty string explaining the cancellation",
+			"Cancellation must include a reason for audit purposes.",
+			"customer requested cancellation", "out of stock", "fraud suspected", "wrong address")
 		return
 	}
 
 	cancelled, err := c.svc.CancelOrder(r.Context(), id, req.Reason)
 	if err != nil {
 		if errors.Is(err, order.ErrOrderNotFound) {
-			httpresponse.NotFound(w, "order_not_found", "order not found")
+			httpresponse.NotFoundError(w, httpresponse.LLMError{
+				Message:    "order with id '" + id + "' was not found",
+				Field:      "id",
+				Received:   id,
+				Suggestion: "Verify the order exists using orders_list or orders_search.",
+			})
 			return
 		}
 		if errors.Is(err, order.ErrInvalidTransition) {
-			httpresponse.BadRequest(w, "invalid_transition", "order cannot be cancelled in its current status")
+			httpresponse.ConflictError(w, httpresponse.LLMError{
+				Code:       "cannot_cancel",
+				Message:    "order cannot be cancelled in its current status (likely already delivered/completed/returned/cancelled)",
+				Field:      "status",
+				Suggestion: "Fetch the order with orders_get to see its current status. Terminal statuses (completed, returned, cancelled) cannot be cancelled.",
+			})
 			return
 		}
 		c.log.Error("Failed to cancel order", zap.Error(err))

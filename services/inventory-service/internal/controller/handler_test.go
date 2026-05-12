@@ -20,7 +20,6 @@ func setupController() (*InventoryController, *Service, *mockStockStorage) {
 	return ctrl, svc, ss
 }
 
-
 func TestProductController_Create_Success(t *testing.T) {
 	ctrl, _, _ := setupController()
 
@@ -237,7 +236,6 @@ func TestProductController_Delete_NotFound(t *testing.T) {
 	}
 }
 
-
 func TestWarehouseController_Create_Success(t *testing.T) {
 	ctrl, _, _ := setupController()
 
@@ -336,7 +334,6 @@ func TestWarehouseController_Update_NotFound(t *testing.T) {
 	}
 }
 
-
 func TestStockController_List_Empty(t *testing.T) {
 	ctrl, _, _ := setupController()
 
@@ -362,7 +359,6 @@ func TestStockController_List_WithFilters(t *testing.T) {
 		t.Errorf("expected 200, got %d", rec.Code)
 	}
 }
-
 
 func TestStockController_Reserve_Success(t *testing.T) {
 	ctrl, _, ss := setupController()
@@ -453,7 +449,6 @@ func TestStockController_Reserve_NotFound(t *testing.T) {
 	}
 }
 
-
 func TestStockController_Release_Success(t *testing.T) {
 	ctrl, _, ss := setupController()
 	ss.seedStock("prod-1", "wh-1", 100, 30, 0)
@@ -491,7 +486,6 @@ func TestStockController_Release_NothingToRelease(t *testing.T) {
 		t.Errorf("expected 400, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
-
 
 func TestStockController_Adjust_Inbound(t *testing.T) {
 	ctrl, _, ss := setupController()
@@ -533,7 +527,6 @@ func TestStockController_Adjust_InvalidType(t *testing.T) {
 	}
 }
 
-
 func TestStockController_ListMovements_Empty(t *testing.T) {
 	ctrl, _, _ := setupController()
 
@@ -546,7 +539,6 @@ func TestStockController_ListMovements_Empty(t *testing.T) {
 		t.Errorf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
-
 
 func TestStockController_ListLowStock_Empty(t *testing.T) {
 	ctrl, _, _ := setupController()
@@ -575,7 +567,6 @@ func TestStockController_ListLowStock_WithData(t *testing.T) {
 	}
 }
 
-
 func TestStockController_GetInventoryReport(t *testing.T) {
 	ctrl, _, ss := setupController()
 	ss.seedStock("prod-1", "wh-1", 100, 20, 0)
@@ -589,7 +580,6 @@ func TestStockController_GetInventoryReport(t *testing.T) {
 		t.Errorf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
-
 
 func TestStockController_UpdateMinThreshold_Success(t *testing.T) {
 	ctrl, _, ss := setupController()

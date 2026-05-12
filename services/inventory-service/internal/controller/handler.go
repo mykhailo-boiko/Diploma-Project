@@ -47,7 +47,6 @@ func NewInventoryController(svc InventoryService, log *zap.Logger) *InventoryCon
 	return &InventoryController{svc: svc, log: log}
 }
 
-
 var productSortFields = map[string]bool{
 	"created_at": true,
 	"name":       true,
@@ -74,7 +73,6 @@ var movementSortFields = map[string]bool{
 	"type":       true,
 	"quantity":   true,
 }
-
 
 func (c *InventoryController) CreateProduct(w http.ResponseWriter, r *http.Request) {
 	var req CreateProductRequest
@@ -198,7 +196,6 @@ func (c *InventoryController) DeleteProduct(w http.ResponseWriter, r *http.Reque
 	httpresponse.OK(w, map[string]string{"status": "deleted"})
 }
 
-
 func (c *InventoryController) CreateWarehouse(w http.ResponseWriter, r *http.Request) {
 	var req CreateWarehouseRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -292,7 +289,6 @@ func (c *InventoryController) UpdateWarehouse(w http.ResponseWriter, r *http.Req
 
 	httpresponse.OK(w, updated)
 }
-
 
 func (c *InventoryController) ListStock(w http.ResponseWriter, r *http.Request) {
 	filter := parseStockFilter(r)
@@ -396,16 +392,27 @@ func (c *InventoryController) ReleaseStock(w http.ResponseWriter, r *http.Reques
 func (c *InventoryController) AdjustStock(w http.ResponseWriter, r *http.Request) {
 	var req AdjustStockRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httpresponse.BadRequest(w, "invalid_request", "invalid request body")
+		httpresponse.InvalidBody(w, err.Error())
 		return
 	}
 
-	if req.ProductID == "" || req.WarehouseID == "" {
-		httpresponse.BadRequest(w, "validation_error", "product_id and warehouse_id are required")
+	if req.ProductID == "" {
+		httpresponse.MissingField(w, "product_id",
+			"product UUID string",
+			"List products via products_list to find a valid product_id.")
+		return
+	}
+	if req.WarehouseID == "" {
+		httpresponse.MissingField(w, "warehouse_id",
+			"warehouse UUID string",
+			"List warehouses via warehouses_list to find a valid warehouse_id.")
 		return
 	}
 	if req.Quantity <= 0 {
-		httpresponse.BadRequest(w, "validation_error", "quantity must be greater than zero")
+		httpresponse.InvalidField(w, "quantity",
+			"positive integer (> 0)", req.Quantity,
+			"Quantity is always positive — the 'type' field determines if it increases (inbound) or decreases (outbound) stock. Use type='outbound' instead of negative quantity.",
+			"1", "5", "100")
 		return
 	}
 
@@ -415,22 +422,36 @@ func (c *InventoryController) AdjustStock(w http.ResponseWriter, r *http.Request
 		stock.MovementTypeAdjustment: true,
 	}
 	if !validTypes[req.Type] {
-		httpresponse.BadRequest(w, "validation_error", "type must be one of: inbound, outbound, adjustment")
+		httpresponse.InvalidField(w, "type",
+			"one of: inbound, outbound, adjustment", req.Type,
+			"Use 'inbound' for restock/supply (increases quantity), 'outbound' for sales/damage (decreases quantity), 'adjustment' for inventory corrections.",
+			"inbound", "outbound", "adjustment")
 		return
 	}
 
 	result, err := c.svc.AdjustStock(r.Context(), req)
 	if err != nil {
 		if errors.Is(err, stock.ErrStockNotFound) {
-			httpresponse.NotFound(w, "stock_not_found", "stock record not found")
+			httpresponse.NotFoundError(w, httpresponse.LLMError{
+				Code:       "stock_not_found",
+				Message:    "stock record for this product+warehouse pair was not found",
+				Suggestion: "Stock records exist only for combinations that have ever had stock. Check stock_list with both product_id and warehouse_id filters to verify the pair exists.",
+			})
 			return
 		}
 		if errors.Is(err, stock.ErrInsufficientStock) {
-			httpresponse.BadRequest(w, "insufficient_stock", "insufficient available stock for outbound adjustment")
+			httpresponse.ConflictError(w, httpresponse.LLMError{
+				Code:       "insufficient_stock",
+				Message:    "not enough available stock to perform this outbound adjustment",
+				Field:      "quantity",
+				Suggestion: "Check current available stock via stock_list. Available = quantity - reserved. Reduce the quantity or restock first.",
+			})
 			return
 		}
 		if errors.Is(err, stock.ErrInvalidQuantity) {
-			httpresponse.BadRequest(w, "validation_error", "quantity must be greater than zero")
+			httpresponse.InvalidField(w, "quantity",
+				"positive integer (> 0)", req.Quantity,
+				"Quantity must be greater than zero.")
 			return
 		}
 		c.log.Error("Failed to adjust stock", zap.Error(err))
@@ -517,7 +538,6 @@ func (c *InventoryController) UpdateMinThreshold(w http.ResponseWriter, r *http.
 
 	httpresponse.OK(w, result)
 }
-
 
 func parseProductFilter(r *http.Request) product.Filter {
 	var filter product.Filter
