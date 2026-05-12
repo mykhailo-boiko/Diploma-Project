@@ -31,11 +31,19 @@ func TestPageFromRequest_Custom(t *testing.T) {
 }
 
 func TestPageFromRequest_ExceedsMax(t *testing.T) {
-	r := httptest.NewRequest(http.MethodGet, "/items?limit=500", nil)
+	r := httptest.NewRequest(http.MethodGet, "/items?limit=5000", nil)
 	page := PageFromRequest(r)
 
 	if page.Limit != defaultLimit {
-		t.Errorf("expected limit %d for exceeding max, got %d", defaultLimit, page.Limit)
+		t.Errorf("expected limit %d for exceeding max (%d), got %d", defaultLimit, maxLimit, page.Limit)
+	}
+}
+
+func TestPageFromRequest_AllowsLargeLimitUpToMax(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "/items?limit=500", nil)
+	page := PageFromRequest(r)
+	if page.Limit != 500 {
+		t.Errorf("expected limit 500 (below max %d), got %d", maxLimit, page.Limit)
 	}
 }
 
