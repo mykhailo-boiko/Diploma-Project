@@ -9,10 +9,12 @@ const (
 	userIDHeader    = "X-User-ID"
 	userRoleHeader  = "X-User-Role"
 	userEmailHeader = "X-User-Email"
+	traceIDHeader   = "X-Trace-ID"
 
 	userIDKey    contextKey = "user_id"
 	userRoleKey  contextKey = "user_role"
 	userEmailKey contextKey = "user_email"
+	traceIDKey   contextKey = "trace_id"
 )
 
 func UserContext(next http.Handler) http.Handler {
@@ -28,9 +30,17 @@ func UserContext(next http.Handler) http.Handler {
 		if email := r.Header.Get(userEmailHeader); email != "" {
 			ctx = context.WithValue(ctx, userEmailKey, email)
 		}
+		if trace := r.Header.Get(traceIDHeader); trace != "" {
+			ctx = context.WithValue(ctx, traceIDKey, trace)
+		}
 
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+func GetTraceID(ctx context.Context) string {
+	id, _ := ctx.Value(traceIDKey).(string)
+	return id
 }
 
 func GetUserID(ctx context.Context) string {

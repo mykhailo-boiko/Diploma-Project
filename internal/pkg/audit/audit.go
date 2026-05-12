@@ -38,6 +38,17 @@ type Entry struct {
 	ErrorMessage string
 }
 
+func EnsureTraceIDColumn(ctx context.Context, pool *pgxpool.Pool, log *zap.Logger) {
+	bgCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	_, err := pool.Exec(bgCtx, `ALTER TABLE audit.action_log ADD COLUMN IF NOT EXISTS trace_id VARCHAR(64)`)
+	if err != nil {
+		log.Debug("EnsureTraceIDColumn skipped", zap.Error(err))
+		return
+	}
+	_, _ = pool.Exec(bgCtx, `CREATE INDEX IF NOT EXISTS idx_audit_trace ON audit.action_log (trace_id) WHERE trace_id IS NOT NULL`)
+}
+
 func (l *Logger) Log(ctx context.Context, e Entry) {
 	if l == nil || l.pool == nil {
 		return
@@ -46,6 +57,7 @@ func (l *Logger) Log(ctx context.Context, e Entry) {
 	actorID := middleware.GetUserID(ctx)
 	actorRole := middleware.GetUserRole(ctx)
 	actorEmail := middleware.GetUserEmail(ctx)
+	traceID := middleware.GetTraceID(ctx)
 	if actorID == "" {
 		actorID = "system"
 	}
@@ -79,13 +91,14 @@ func (l *Logger) Log(ctx context.Context, e Entry) {
 			INSERT INTO audit.action_log
 				(actor_user_id, actor_email, actor_role, service_name, action,
 				 entity_type, entity_ids, params_snip, result_status,
-				 success_count, failure_count, error_message)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+				 success_count, failure_count, error_message, trace_id)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
 			actorID, actorEmail, actorRole, l.serviceName, e.Action,
 			nullIfEmpty(e.EntityType),
 			e.EntityIDs, nullIfEmpty(paramsSnip),
 			e.ResultStatus, e.SuccessCount, e.FailureCount,
 			nullIfEmpty(e.ErrorMessage),
+			nullIfEmpty(traceID),
 		)
 		if err != nil {
 			l.log.Warn("Failed to write audit entry",
