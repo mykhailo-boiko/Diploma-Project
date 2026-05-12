@@ -1,4 +1,3 @@
-"""MCP Server entry point — registers all tool modules and starts the FastMCP server."""
 
 from mcp.server.fastmcp import FastMCP
 
@@ -8,6 +7,7 @@ from tools import (
     logistics_tools,
     notifications_tools,
     orders_tools,
+    simulator_tools,
     users_tools,
 )
 
@@ -27,12 +27,11 @@ logistics_tools.register(mcp)
 analytics_tools.register(mcp)
 notifications_tools.register(mcp)
 users_tools.register(mcp)
-
+simulator_tools.register(mcp)
 
 def main() -> None:
-    """Run the MCP server using stdio transport."""
-    mcp.run()
 
+    mcp.run()
 
 if __name__ == "__main__":
     main()

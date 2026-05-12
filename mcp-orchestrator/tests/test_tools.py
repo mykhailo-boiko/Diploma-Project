@@ -1,16 +1,13 @@
-"""Tests for MCP tool registration and JSON Schema generation."""
 
 from main import mcp
 from mcp.server.fastmcp import FastMCP
 
-
 def test_mcp_instance_created():
-    """MCP server instance exists and is a FastMCP."""
+
     assert isinstance(mcp, FastMCP)
 
-
 def test_tools_registered():
-    """All expected tools are registered."""
+
     tools = mcp._tool_manager.list_tools()
     tool_names = {t.name for t in tools}
 
@@ -44,20 +41,17 @@ def test_tools_registered():
     assert not missing, f"Missing tools: {missing}"
     assert len(tool_names) >= 30, f"Expected 30+ tools, got {len(tool_names)}"
 
-
 def test_tool_count():
-    """Verify minimum tool count per acceptance criteria (30+)."""
+
     tools = mcp._tool_manager.list_tools()
     assert len(tools) >= 30
-
 
 def _get_tool(name: str):
     tools = mcp._tool_manager.list_tools()
     return next(t for t in tools if t.name == name)
 
-
 def test_orders_list_schema():
-    """Verify orders_list tool has correct JSON Schema parameters."""
+
     tool = _get_tool("orders_list")
 
     assert tool.description is not None
@@ -71,18 +65,16 @@ def test_orders_list_schema():
     assert "limit" in props
     assert "offset" in props
 
-
 def test_orders_create_schema():
-    """Verify orders_create tool has required parameters."""
+
     tool = _get_tool("orders_create")
 
     required = tool.parameters.get("required", [])
     assert "customer_name" in required
     assert "items" in required
 
-
 def test_analytics_report_schema():
-    """Verify analytics_report tool has correct parameters."""
+
     tool = _get_tool("analytics_report")
 
     required = tool.parameters.get("required", [])
@@ -90,17 +82,15 @@ def test_analytics_report_schema():
     assert "date_from" in required
     assert "date_to" in required
 
-
 def test_all_tools_have_descriptions():
-    """Every registered tool must have a non-empty description."""
+
     tools = mcp._tool_manager.list_tools()
     for tool in tools:
         assert tool.description, f"Tool {tool.name} has no description"
         assert len(tool.description) > 10, f"Tool {tool.name} description is too short"
 
-
 def test_all_tools_have_parameters():
-    """Every registered tool must have a parameters schema."""
+
     tools = mcp._tool_manager.list_tools()
     for tool in tools:
         assert tool.parameters is not None, f"Tool {tool.name} has no parameters"

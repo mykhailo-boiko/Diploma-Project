@@ -1,88 +1,51 @@
-"""MCP tool definitions for the Notification service."""
 
-from typing import Any
+from typing import Any, Literal
 
 from mcp.server.fastmcp import FastMCP
 
 from http_client import api_get, api_post, api_put, api_get_all
-
+from types_mcp import (
+    NotificationType, PageLimit, PageOffset, SortOrder, UserRole, UUIDStr,
+)
 
 def register(mcp: FastMCP) -> None:
-    """Register all notification-related tools with the MCP server."""
 
-    @mcp.tool()
+    @mcp.tool(description="List notifications for the CURRENT user (admin in MCP context). For per-user unread counts use notifications_unread_counts. For bulk sending use notifications_bulk. Args: type: Filter by notification type enum. sort_by: Sort field. sort_order: 'asc' or 'desc'. limit: Page size. offset: Page offset. fetch_all: Paginate through everything.")
     async def notifications_list(
-        type: str | None = None,
-        sort_by: str | None = None,
-        sort_order: str | None = None,
-        limit: int = 100,
-        offset: int = 0,
+        type: NotificationType | None = None,
+        sort_by: Literal["created_at", "type", "status"] | None = None,
+        sort_order: SortOrder | None = None,
+        limit: PageLimit = 100,
+        offset: PageOffset = 0,
         fetch_all: bool = False,
     ) -> dict[str, Any]:
-        """List notifications for the CURRENT user (service-user/admin in MCP context) with optional filters.
-
-        For per-user unread aggregate (e.g. "who has most unread"), use notifications_unread_counts.
-        For sending in bulk to many users, use notifications_bulk.
-
-        Args:
-            type: Filter by notification type (order_created, order_updated, order_cancelled, low_stock, stock_changed, shipment_created, shipment_updated, system).
-            sort_by: Sort field (created_at, type, status).
-            sort_order: Sort direction (asc or desc).
-            limit: Maximum number of results (default 20).
-            offset: Number of results to skip (default 0).
-            fetch_all: When True, automatically fetches every page and returns the full list. Use this when the user asks for "all", "everything", or otherwise wants no pagination.
-        """
         return await (api_get_all if fetch_all else api_get)("/api/v1/notifications", {
             "type": type, "sort_by": sort_by, "sort_order": sort_order,
             "limit": limit, "offset": offset,
         })
 
-    @mcp.tool()
+    @mcp.tool(description="Create a notification for a user (admin only). Args: user_id: Recipient user UUID. type: Notification type enum. title: Notification title. message: Body text.")
     async def notifications_create(
-        user_id: str,
-        type: str,
+        user_id: UUIDStr,
+        type: NotificationType,
         title: str,
         message: str,
     ) -> dict[str, Any]:
-        """Create a notification for a user (admin only).
-
-        Args:
-            user_id: The recipient user ID.
-            type: Notification type (order_created, order_updated, order_cancelled, low_stock, stock_changed, shipment_created, shipment_updated, system).
-            title: Notification title.
-            message: Notification message body.
-        """
         return await api_post("/api/v1/notifications", {
             "user_id": user_id, "type": type,
             "title": title, "message": message,
         })
 
-    @mcp.tool()
-    async def notifications_mark_read(notification_id: str) -> dict[str, Any]:
-        """Mark a notification as read.
-
-        Args:
-            notification_id: The unique identifier of the notification.
-        """
+    @mcp.tool(description="Mark a notification as read. Args: notification_id: Notification UUID.")
+    async def notifications_mark_read(notification_id: UUIDStr) -> dict[str, Any]:
         return await api_put(f"/api/v1/notifications/{notification_id}/read")
 
-    @mcp.tool()
+    @mcp.tool(description="Count of unread notifications for the current user.")
     async def notifications_unread_count() -> dict[str, Any]:
-        """Get the count of unread notifications for the current user."""
         return await api_get("/api/v1/notifications/unread-count")
 
-    @mcp.tool()
-    async def notifications_unread_counts(role: str | None = None) -> dict[str, Any]:
-        """Get unread notification counts for every user, enriched with email, name and role (admin only).
-
-        Use this when the user asks which users / managers / staff have the most unread
-        notifications, or wants a leaderboard of unread counts. Returns rows sorted by
-        unread_count descending. Users with zero unread are excluded.
-
-        Args:
-            role: Optional role filter (admin, warehouse_manager, logistics_manager, analyst, operator).
-                When set, only users with this role are returned.
-        """
+    @mcp.tool(description="Unread counts per user, enriched with email/name/role (admin only). Args: role: Optional role filter.")
+    async def notifications_unread_counts(role: UserRole | None = None) -> dict[str, Any]:
         counts_resp = await api_get("/api/v1/notifications/admin/unread-counts")
         users_resp = await api_get_all("/api/v1/users", {"role": role} if role else {})
 
@@ -113,47 +76,28 @@ def register(mcp: FastMCP) -> None:
         rows.sort(key=lambda r: r["unread_count"], reverse=True)
         return {"data": rows}
 
-    @mcp.tool()
+    @mcp.tool(description="Get notification preferences for current user (per-type channel toggles).")
     async def notifications_preferences_get() -> dict[str, Any]:
-        """Get notification preferences for the current user (per notification type channel toggles)."""
         return await api_get("/api/v1/notifications/preferences")
 
-    @mcp.tool()
+    @mcp.tool(description="Update notification preferences for a type. Args: type: Notification type enum. in_app: Enable in-app channel. email: Enable email channel. sms: Enable SMS channel.")
     async def notifications_preferences_update(
-        type: str,
+        type: NotificationType,
         in_app: bool = True,
         email: bool = True,
         sms: bool = False,
     ) -> dict[str, Any]:
-        """Update notification preferences for a specific notification type.
-
-        Args:
-            type: Notification type to configure (order_created, order_updated, order_cancelled, low_stock, stock_changed, shipment_created, shipment_updated, system).
-            in_app: Enable in-app notifications (default: true).
-            email: Enable email notifications (default: true).
-            sms: Enable SMS notifications (default: false).
-        """
         return await api_put("/api/v1/notifications/preferences", {
-            "type": type, "in_app": in_app,
-            "email": email, "sms": sms,
+            "type": type, "in_app": in_app, "email": email, "sms": sms,
         })
 
-    @mcp.tool()
+    @mcp.tool(description="Send a notification to many users (admin only). Args: user_ids: Recipient UUIDs. type: Notification type enum. title: Title. message: Body.")
     async def notifications_bulk(
-        user_ids: list[str],
-        type: str,
+        user_ids: list[UUIDStr],
+        type: NotificationType,
         title: str,
         message: str,
     ) -> dict[str, Any]:
-        """Send a notification to multiple users at once (admin only). Returns success/failure counts.
-
-        Args:
-            user_ids: List of recipient user IDs.
-            type: Notification type.
-            title: Notification title.
-            message: Notification message body.
-        """
         return await api_post("/api/v1/notifications/bulk", {
-            "user_ids": user_ids, "type": type,
-            "title": title, "message": message,
+            "user_ids": user_ids, "type": type, "title": title, "message": message,
         })
