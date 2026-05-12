@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-The MCP Orchestrator exposes **87 tools** across 6 service domains. Tools are registered via [FastMCP](https://github.com/modelcontextprotocol/python-sdk) and called by the Gemini LLM through the MCP Host.
+The MCP Orchestrator exposes **93 tools** across 7 service domains. Tools are registered via [FastMCP](https://github.com/modelcontextprotocol/python-sdk) and called by the Gemini LLM through the MCP Host.
 
 ## RBAC Tool Access
 
@@ -14,7 +14,32 @@ Tools are filtered by user role **before** being sent to the LLM:
 | **Logistics Manager** | `shipments_*`, `carriers_*`, `routes_*`, `logistics_*`, `orders_*` |
 | **Analyst** | `analytics_*` |
 
-**Common tools** (all roles): `users_login`, `users_register`, `users_refresh_token`, `users_password_reset`, `users_password_reset_confirm`, `users_me`, `users_update_profile`
+**Common tools** (all roles): `users_me`, `users_update_profile`
+
+**Admin-only domains**: `simulator_*` (live traffic generator), `audit_query`, `audit_trace_by_entity`, `users_register`, `users_password_reset` — visible only when `role == "admin"` because the prefix is not in any non-admin role's allow-list.
+
+## Strict Parameter Typing
+
+All tools use strict Pydantic types via `typing.Annotated` so FastMCP emits precise JSON Schemas
+that Gemini honours. The `string` / `int` columns below describe the JSON wire format; at runtime
+Pydantic validators enforce specific formats and emit LLM-friendly error messages on mismatch.
+
+| Annotated type | Wire format | Constraint |
+|----------------|-------------|------------|
+| `UUIDStr` | string | 8-4-4-4-12 hex UUID |
+| `TrackingNumber` | string | `CO-YYYY-XXXXXX` pattern |
+| `ISODate` | string | `YYYY-MM-DD` ISO 8601 date |
+| `ISODateTime` | string | RFC3339 datetime |
+| `PhoneE164` | string | `+CCC...` (7-15 digits) |
+| `EmailAddr` | string | `local@domain.tld` |
+| `PositiveInt` | int | > 0, <= 1_000_000 |
+| `NonNegativeInt` | int | >= 0 |
+| `PageLimit` | int | 1..1000 |
+| `Money` | number | 0..10M |
+| `OrderStatus`, `ShipmentStatus`, … | string | enum-restricted via `Literal[...]` |
+
+See [`docs/typed-tools.md`](typed-tools.md) for the complete catalog and behaviour, and
+[`docs/error-codes.md`](error-codes.md) for the structured error envelope returned on validation failure.
 
 ---
 
@@ -675,7 +700,7 @@ Returns `{customer_name, first_order_date, last_order_date, lifetime_value, orde
 
 ---
 
-## Audit (1 tool)
+## Audit (2 tools)
 
 ### audit_query
 Query the audit trail of write operations across the platform.
@@ -684,11 +709,21 @@ Query the audit trail of write operations across the platform.
 |-------|------|-------------|
 | actor_email | str (optional) | Filter to one actor |
 | action | str (optional) | Exact action name (e.g. `orders.bulk_update_status`) |
-| entity_id | str (optional) | Entity ID touched by the action |
-| date_from, date_to | str (optional) | YYYY-MM-DD window |
-| limit | int (default 50, max 500) | Cap on rows |
+| entity_id | UUIDStr (optional) | Entity UUID touched by the action |
+| date_from, date_to | ISODate (optional) | YYYY-MM-DD window |
+| limit | PositiveInt (default 50, max 500) | Cap on rows |
 
-Each entry: `{actor_user_id, actor_email, actor_role, service_name, action, entity_type, entity_ids, params_snip, result_status, success_count, failure_count, error_message, created_at}`.
+Each entry: `{actor_user_id, actor_email, actor_role, service_name, action, entity_type, entity_ids, params_snip, result_status, success_count, failure_count, error_message, trace_id, created_at}`.
+
+### audit_trace_by_entity
+Return the full chronological audit trail for a single entity (order, shipment, product, etc.).
+
+| Param | Type | Description |
+|-------|------|-------------|
+| entity_id | UUIDStr | UUID of the entity to trace |
+| limit | PositiveInt (default 200) | Max events |
+
+Returns `{entity_id, total, trace_ids[], events[]}`. The `trace_ids[]` field links each audit row to the corresponding Logfire span via `X-Trace-ID` propagation across services.
 
 ---
 
@@ -864,6 +899,49 @@ Soft-delete a user (admin only).
 
 ---
 
+## Simulator (5 tools, admin-only)
+
+Controls for the live traffic-generation service. The simulator continuously creates orders, advances shipments through the 15-state postal pipeline, fluctuates inventory and emits notifications so the platform behaves like a 24/7 production system. All tools require `admin` role.
+
+### `simulator_status`
+
+Returns the current state of the live simulator: `enabled`, `scenario`, `speed`, `uptime_secs`, and counters (`orders_created`, `orders_progressed`, `orders_cancelled`, `shipments_advanced`, `shipment_events`, `stock_adjustments`, `notifications_sent`, `errors`).
+
+No parameters.
+
+### `simulator_start`
+
+Start the simulator.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `scenario` | string | No (default `steady`) | One of `idle`, `steady`, `holiday_spike`, `carrier_failure`, `demand_surge` |
+| `speed` | number | No (default `1.0`) | Time-acceleration multiplier (0 < speed ≤ 100, typical: 1, 5, 10, 25, 50) |
+
+### `simulator_stop`
+
+Pause all actors. Counters retained for inspection.
+
+No parameters.
+
+### `simulator_set_speed`
+
+Adjust the time multiplier without restart.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `speed` | number | Yes | New multiplier (0 < speed ≤ 100) |
+
+### `simulator_set_scenario`
+
+Switch active scenario without restart.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `scenario` | string | Yes | One of `idle`, `steady`, `holiday_spike`, `carrier_failure`, `demand_surge` |
+
+---
+
 ## Tool Count Summary
 
 | Domain | Tools |
@@ -879,7 +957,8 @@ Soft-delete a user (admin only).
 | Logistics Performance | 1 |
 | Analytics | 16 |
 | Customers | 1 |
-| Audit | 1 |
+| Audit | 2 |
 | Notifications | 8 |
 | Users | 11 |
-| **Total** | **87** |
+| Simulator | 5 |
+| **Total** | **93** |

@@ -204,13 +204,27 @@ created → picked_up → in_transit → delivered
 | `GET` | `/api/v1/analytics/inventory/summary` | Auth | Stock levels, turnover, low-stock count |
 | `GET` | `/api/v1/analytics/logistics` | Auth | Daily logistics metrics |
 | `GET` | `/api/v1/analytics/logistics/performance` | Auth | Shipment counts, delivery rate, on-time rate |
-| `GET` | `/api/v1/analytics/anomalies` | Auth | Rule-based anomaly detection |
+| `GET` | `/api/v1/analytics/anomalies` | Auth | Rule-based anomaly detection (category=sales/logistics/inventory/business/all) |
 | `GET` | `/api/v1/analytics/optimization` | Auth | Reorder recommendations |
+| `GET` | `/api/v1/analytics/quick-cancellations` | Auth | Orders cancelled within N min after shipped (carrier × city) |
+| `GET` | `/api/v1/analytics/rebalancing` | Auth | Cross-warehouse rebalancing recs with cost/ROI model |
+| `GET` | `/api/v1/analytics/carriers-performance` | Auth | Per-carrier on-time rate + worst destination cities |
+| `GET` | `/api/v1/analytics/customers/profile-360` | Auth | Customer profile: lifetime + churn risk + top categories |
+| `GET` | `/api/v1/analytics/period-comparison` | Auth | Compare a metric between two date windows |
+| `GET` | `/api/v1/analytics/forecast` | Auth | Time-series forecast (linear / rolling-avg / ets-simple) |
+| `POST` | `/api/v1/analytics/what-if` | Auth | Counterfactual simulator (carrier_drop / capacity_increase / price_change / promo_burst) |
+| `GET` | `/api/v1/analytics/audit-log` | Admin | Query audit trail with filters |
+| `GET` | `/api/v1/analytics/trace/by-entity` | Admin | Full chronological audit trace by `entity_id` (with `trace_ids[]` for Logfire deep-link) |
 | `POST` | `/api/v1/analytics/report` | Auth | Generate custom report (sales/inventory/logistics/full) |
 
-**Common query parameters**: `date_from`, `date_to` (YYYY-MM-DD format)
+**Common query parameters**: `date_from`, `date_to` (ISO 8601 `YYYY-MM-DD`)
 
-**Additional** (GET /api/v1/analytics/sales/trends): `granularity` (day or week)
+**Additional**: `granularity=day|week` (sales/trends), `entity_id=UUID` (trace/by-entity, audit-log),
+`actor_email`, `action`, `metric`, `category` per endpoint.
+
+**Correlation**: every write across services accepts the `X-Trace-ID` request header and stores
+it on the corresponding `audit.action_log` row. Use `GET /api/v1/analytics/trace/by-entity?entity_id=…`
+to reconstruct the chronological timeline of all actions touching one entity (order, shipment, etc.).
 
 ---
 
@@ -229,6 +243,30 @@ created → picked_up → in_transit → delivered
 **WebSocket**: `ws://localhost:8006/ws/notifications` — real-time notification push
 
 **Notification types**: `order_created`, `order_updated`, `order_cancelled`, `low_stock`, `stock_changed`, `shipment_created`, `shipment_updated`, `system`
+
+---
+
+## Simulator (simulator-service :8007, admin-only via gateway)
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| `GET` | `/api/v1/simulator/status` | Admin | Current state, scenario, speed, counters |
+| `POST` | `/api/v1/simulator/start` | Admin | Body `{scenario, speed}` — enable traffic generator |
+| `POST` | `/api/v1/simulator/stop` | Admin | Pause all actors, retain counters |
+| `POST` | `/api/v1/simulator/speed` | Admin | Body `{speed}` — adjust multiplier (0 < speed ≤ 100) |
+| `POST` | `/api/v1/simulator/scenario` | Admin | Body `{scenario}` — switch active scenario |
+
+**Scenarios**: `idle`, `steady`, `holiday_spike`, `carrier_failure`, `demand_surge`
+
+---
+
+## Real-time Event Stream (api-gateway :8080)
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| `GET` | `/api/v1/events/stream` | Auth | Server-Sent Events channel bridging NATS to UI |
+
+Server emits typed SSE events: `order.created`, `order.updated`, `order.cancelled`, `shipment.created`, `shipment.updated`, `shipment.out_for_delivery`, `shipment.delivered`, `shipment.attempted`, `shipment.returned`, `shipment.redirected`, `stock.changed`, `stock.low`, `notification.new`, `analytics.updated`. Events are filtered by user role server-side; admin sees all.
 
 ---
 

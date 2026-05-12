@@ -162,7 +162,7 @@ open http://localhost:3000
 ### What This Demonstrates
 - RBAC enforcement at the MCP tool level (tools filtered BEFORE sending to LLM)
 - Operator can only access orders + notifications
-- Admin has unrestricted access to all 87 tools
+- Admin has unrestricted access to all 93 tools
 - Same natural language queries produce different results based on role
 - Security boundary is enforced at the orchestration layer, not just the UI
 

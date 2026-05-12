@@ -4,12 +4,13 @@ Enterprise-grade supply chain management platform with an AI orchestration layer
 
 ## Key Features
 
-- **6 microservices** (Go): Orders, Inventory, Logistics, Analytics, Notifications, Users
-- **API Gateway** with JWT authentication, RBAC, rate limiting, CORS
-- **MCP Orchestrator** (Python/FastMCP): 87 tools spanning all business domains
+- **7 microservices** (Go): Orders, Inventory, Logistics, Analytics, Notifications, Users, Simulator
+- **API Gateway** with JWT authentication, RBAC, rate limiting, CORS, SSE real-time stream
+- **MCP Orchestrator** (Python/FastMCP): 93 tools spanning all business domains
 - **MCP Host** (Python/FastAPI): WebSocket chat with Google Gemini LLM integration
-- **Frontend** (Next.js 16, React 19, TypeScript): role-aware dashboard, data tables, charts, real-time chat
-- **Event-driven architecture**: NATS for inter-service communication
+- **Frontend** (Next.js 16, React 19, TypeScript): role-aware dashboard, data tables, charts, real-time chat, live activity feed
+- **Event-driven architecture**: NATS for inter-service communication; SSE bridge to UI for real-time updates
+- **Live simulation**: a dedicated simulator service generates continuous order/shipment/inventory traffic with 5 scenarios and 1×–50× time multiplier — dashboards and analytics update in real time
 - **RBAC**: 5 roles (Admin, Operator, Warehouse Manager, Logistics Manager, Analyst)
 
 ## Architecture
@@ -28,7 +29,7 @@ flowchart TB
     end
 
     subgraph ai["AI orchestration"]
-        MCPOrch["MCP Orchestrator<br/>FastMCP · 87 tools<br/>stdio subprocess"]
+        MCPOrch["MCP Orchestrator<br/>FastMCP · 93 tools<br/>stdio subprocess"]
     end
 
     subgraph svc["Microservices (Go)"]
@@ -38,6 +39,7 @@ flowchart TB
         LS["Logistics · :8004"]
         AS["Analytics · :8005"]
         NS["Notification · :8006"]
+        SIM["Simulator · :8007"]
     end
 
     subgraph data["Data plane"]
@@ -106,8 +108,8 @@ JWT_SECRET=your_random_32_char_hex_string
 docker compose up --build -d
 ```
 
-This starts 12 containers in the correct dependency order:
-`postgres` / `redis` / `nats` → 6 Go services → `api-gateway` → `mcp-host` → `frontend`
+This starts 15 containers in the correct dependency order:
+`postgres` / `redis` / `nats` → 6 Go services → `api-gateway` → `simulator-service` / `mcp-host` → `frontend` → `prometheus` / `grafana`
 
 Wait for all services to become healthy:
 
@@ -184,7 +186,8 @@ chainorchestra/
 │   ├── inventory-service/      # Products, warehouses, stock
 │   ├── logistics-service/      # Shipments, carriers, routes
 │   ├── analytics-service/      # Dashboards, anomalies, reports
-│   └── notification-service/   # In-app, WebSocket push, mock email/SMS
+│   ├── notification-service/   # In-app, WebSocket push, mock email/SMS
+│   └── simulator-service/      # Live traffic generator (orders/shipments/stock/notifications)
 ├── internal/pkg/               # Shared Go packages
 │   ├── auth/                   # JWT generation/validation
 │   ├── httpresponse/           # Standard JSON response format
@@ -193,7 +196,7 @@ chainorchestra/
 │   ├── pagination/             # Page, Sort, Filter types
 │   ├── postgres/               # pgx connection pool
 │   └── validate/               # Validation wrapper
-├── mcp-orchestrator/           # MCP Server (Python) — 87 tool definitions
+├── mcp-orchestrator/           # MCP Server (Python) — 93 tool definitions
 ├── mcp-host/                   # MCP Host (Python) — WebSocket, Gemini, RBAC
 ├── frontend/                   # Next.js web application
 ├── scripts/                    # Seed data, E2E tests
@@ -210,7 +213,12 @@ chainorchestra/
 
 - [Architecture Diagram](docs/architecture.md) — system components and data flow (Mermaid)
 - [API Reference](docs/api-reference.md) — all REST endpoints per service
-- [MCP Tools Reference](docs/mcp-tools.md) — complete catalog of 87 MCP tools
+- [MCP Tools Reference](docs/mcp-tools.md) — complete catalog of 93 MCP tools
+- [Typed MCP Tools](docs/typed-tools.md) — strict Pydantic types so the LLM can't pass wrong shapes silently
+- [LLM Error Codes](docs/error-codes.md) — structured `{code, field, expected, suggestion, examples}` envelope
+- [Observability & Tracing](docs/observability.md) — Logfire spans, audit trace by `entity_id`, token budgets, loop guard
+- [Integration Tests](docs/integration-tests.md) — running the E2E test suite
+- [Demo Scenarios](docs/demo-scenarios.md) — RBAC + chat workflows for live demo
 
 ## Running Tests
 

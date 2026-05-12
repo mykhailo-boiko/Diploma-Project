@@ -2,7 +2,7 @@
 
 ## System Overview
 
-ChainOrchestra is a microservice-based supply chain management platform with an AI orchestration layer. The system consists of 12 containers orchestrated via Docker Compose.
+ChainOrchestra is a microservice-based supply chain management platform with an AI orchestration layer. The system consists of 15 containers orchestrated via Docker Compose, including a dedicated simulator-service that generates continuous traffic to validate the platform under real-world load.
 
 ```mermaid
 graph TB
@@ -16,7 +16,7 @@ graph TB
     end
 
     subgraph "AI Layer"
-        MO["MCP Orchestrator<br/>(FastMCP)<br/>87 tools"]
+        MO["MCP Orchestrator<br/>(FastMCP)<br/>93 tools"]
         LLM["Google Gemini<br/>LLM"]
     end
 
@@ -27,6 +27,7 @@ graph TB
         LS["Logistics Service<br/>:8004"]
         AS["Analytics Service<br/>:8005"]
         NS["Notification Service<br/>:8006"]
+        SIM["Simulator Service<br/>:8007"]
     end
 
     subgraph "Infrastructure"
@@ -44,6 +45,8 @@ graph TB
     GW -->|Proxy + JWT headers| LS
     GW -->|Proxy + JWT headers| AS
     GW -->|Proxy + JWT headers| NS
+    GW -->|Proxy + admin-only| SIM
+    SIM -->|REST as admin| GW
 
     MH -->|stdio| MO
     MH -->|API calls| LLM
