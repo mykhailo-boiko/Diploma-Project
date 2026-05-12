@@ -58,6 +58,71 @@ var migrations = []struct {
 			CREATE INDEX IF NOT EXISTS idx_route_shipment_id ON logistics.route (shipment_id);
 		`,
 	},
+	{
+		version: "000002_postal_tracking_fields",
+		sql: `
+			ALTER TABLE logistics.shipment
+				ADD COLUMN IF NOT EXISTS tracking_number       VARCHAR(32),
+				ADD COLUMN IF NOT EXISTS recipient              JSONB NOT NULL DEFAULT '{}'::jsonb,
+				ADD COLUMN IF NOT EXISTS sender                 JSONB NOT NULL DEFAULT '{}'::jsonb,
+				ADD COLUMN IF NOT EXISTS estimated_delivery_at  TIMESTAMPTZ,
+				ADD COLUMN IF NOT EXISTS delivered_at           TIMESTAMPTZ,
+				ADD COLUMN IF NOT EXISTS delivery_attempts      INT NOT NULL DEFAULT 0,
+				ADD COLUMN IF NOT EXISTS delivery_signature     VARCHAR(255),
+				ADD COLUMN IF NOT EXISTS delivery_photo_url     TEXT,
+				ADD COLUMN IF NOT EXISTS current_location_city  VARCHAR(100),
+				ADD COLUMN IF NOT EXISTS current_location_hub   VARCHAR(100);
+
+			UPDATE logistics.shipment
+			SET tracking_number = 'CO-' ||
+			    EXTRACT(YEAR FROM created_at)::text || '-' ||
+			    UPPER(SUBSTR(MD5(id::text), 1, 6))
+			WHERE tracking_number IS NULL;
+
+			ALTER TABLE logistics.shipment
+				ALTER COLUMN tracking_number SET NOT NULL;
+
+			CREATE UNIQUE INDEX IF NOT EXISTS uniq_shipment_tracking_number
+				ON logistics.shipment (tracking_number);
+
+			CREATE INDEX IF NOT EXISTS idx_shipment_estimated_delivery
+				ON logistics.shipment (estimated_delivery_at) WHERE deleted_at IS NULL;
+
+			CREATE INDEX IF NOT EXISTS idx_shipment_recipient_city
+				ON logistics.shipment ((recipient->>'city')) WHERE deleted_at IS NULL;
+
+			CREATE TABLE IF NOT EXISTS logistics.shipment_event (
+				id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+				shipment_id   UUID NOT NULL REFERENCES logistics.shipment(id) ON DELETE CASCADE,
+				event_type    VARCHAR(50) NOT NULL,
+				location_city VARCHAR(100),
+				location_hub  VARCHAR(100),
+				notes         TEXT,
+				occurred_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+				recorded_by   VARCHAR(100) NOT NULL DEFAULT 'system',
+				payload       JSONB NOT NULL DEFAULT '{}'::jsonb,
+				created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+			);
+
+			CREATE INDEX IF NOT EXISTS idx_shipment_event_shipment_time
+				ON logistics.shipment_event (shipment_id, occurred_at DESC);
+			CREATE INDEX IF NOT EXISTS idx_shipment_event_type
+				ON logistics.shipment_event (event_type, occurred_at DESC);
+
+			CREATE TABLE IF NOT EXISTS logistics.delivery_attempt (
+				id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+				shipment_id     UUID NOT NULL REFERENCES logistics.shipment(id) ON DELETE CASCADE,
+				attempt_number  INT NOT NULL,
+				reason          VARCHAR(50) NOT NULL,
+				notes           TEXT,
+				next_attempt_at TIMESTAMPTZ,
+				occurred_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+			);
+
+			CREATE INDEX IF NOT EXISTS idx_delivery_attempt_shipment
+				ON logistics.delivery_attempt (shipment_id, attempt_number);
+		`,
+	},
 }
 
 func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {

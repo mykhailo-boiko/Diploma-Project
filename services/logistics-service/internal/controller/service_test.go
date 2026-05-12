@@ -82,6 +82,50 @@ func (m *mockShipmentStorage) ReassignCarrierByCity(_ context.Context, _, _, _ s
 	return shipment.ReassignResult{DryRun: dryRun}, nil
 }
 
+func (m *mockShipmentStorage) GetShipmentByTracking(_ context.Context, _ string) (shipment.Shipment, error) {
+	return shipment.Shipment{}, shipment.ErrShipmentNotFound
+}
+
+func (m *mockShipmentStorage) RecordEvent(_ context.Context, e shipment.ShipmentEvent) (shipment.ShipmentEvent, error) {
+	return e, nil
+}
+
+func (m *mockShipmentStorage) GetTimeline(_ context.Context, _ string) ([]shipment.ShipmentEvent, error) {
+	return []shipment.ShipmentEvent{}, nil
+}
+
+func (m *mockShipmentStorage) UpdateRecipient(_ context.Context, id string, _ shipment.RecipientPatch) (shipment.Shipment, error) {
+	return shipment.Shipment{ID: id}, nil
+}
+
+func (m *mockShipmentStorage) UpdateSender(_ context.Context, id string, _ shipment.RecipientPatch) (shipment.Shipment, error) {
+	return shipment.Shipment{ID: id}, nil
+}
+
+func (m *mockShipmentStorage) UpdateEstimatedDelivery(_ context.Context, id string, _ time.Time) (shipment.Shipment, error) {
+	return shipment.Shipment{ID: id}, nil
+}
+
+func (m *mockShipmentStorage) UpdateCurrentLocation(_ context.Context, id, _, _ string) (shipment.Shipment, error) {
+	return shipment.Shipment{ID: id}, nil
+}
+
+func (m *mockShipmentStorage) RecordDelivery(_ context.Context, id, _, _ string) (shipment.Shipment, error) {
+	return shipment.Shipment{ID: id}, nil
+}
+
+func (m *mockShipmentStorage) RecordDeliveryAttempt(_ context.Context, a shipment.DeliveryAttempt) (shipment.DeliveryAttempt, error) {
+	return a, nil
+}
+
+func (m *mockShipmentStorage) GetDeliveryAttempts(_ context.Context, _ string) ([]shipment.DeliveryAttempt, error) {
+	return []shipment.DeliveryAttempt{}, nil
+}
+
+func (m *mockShipmentStorage) RedirectAddress(_ context.Context, id string, _ shipment.Address, _ string) (shipment.Shipment, error) {
+	return shipment.Shipment{ID: id}, nil
+}
+
 type mockCarrierStorage struct {
 	mu       sync.Mutex
 	carriers map[string]carrier.Carrier
