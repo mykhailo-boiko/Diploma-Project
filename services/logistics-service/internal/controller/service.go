@@ -286,6 +286,14 @@ func (s *Service) Reschedule(ctx context.Context, id string, newETA time.Time, r
 	return updated, nil
 }
 
+func (s *Service) recentlyUpdated(id string) shipment.Shipment {
+	sh, err := s.shipments.GetShipmentByID(context.Background(), id)
+	if err != nil {
+		return shipment.Shipment{}
+	}
+	return sh
+}
+
 func (s *Service) Redirect(ctx context.Context, id string, newAddress shipment.Address, reason string) (shipment.Shipment, error) {
 	if newAddress.City == "" || newAddress.Street == "" {
 		return shipment.Shipment{}, fmt.Errorf("new address must include at least street and city")
@@ -395,6 +403,7 @@ func (s *Service) RecordDelivery(ctx context.Context, id, signature, photoURL st
 		RecordedBy: actorEmail(ctx),
 		Payload:    map[string]any{"signature": signature, "photo_url": photoURL},
 	})
+	s.publishShipmentMilestone(updated, "delivered")
 	s.audit.Log(ctx, audit.Entry{
 		Action:       "shipments.record_delivery",
 		EntityType:   "shipment",
@@ -687,5 +696,43 @@ func (s *Service) publishShipmentStatusChanged(sh shipment.Shipment, previousSta
 
 	if err := s.nc.Publish("logistics.shipment_status_changed", "logistics.shipment_status_changed", data); err != nil {
 		s.log.Error("Failed to publish logistics.shipment_status_changed", zap.String("shipment_id", sh.ID), zap.Error(err))
+	}
+
+	switch sh.Status {
+	case shipment.StatusOutForDelivery:
+		s.publishShipmentMilestone(sh, "out_for_delivery")
+	case shipment.StatusDelivered:
+		s.publishShipmentMilestone(sh, "delivered")
+	case shipment.StatusDeliveryAttempted:
+		s.publishShipmentMilestone(sh, "attempted")
+	case shipment.StatusReturnedToSender, shipment.StatusReturned:
+		s.publishShipmentMilestone(sh, "returned")
+	case shipment.StatusRedirected:
+		s.publishShipmentMilestone(sh, "redirected")
+	}
+}
+
+func (s *Service) publishShipmentMilestone(sh shipment.Shipment, milestone string) {
+	if s.nc == nil {
+		return
+	}
+	data := map[string]any{
+		"shipment_id":     sh.ID,
+		"order_id":        sh.OrderID,
+		"tracking_number": sh.TrackingNumber,
+		"milestone":       milestone,
+		"status":          string(sh.Status),
+		"recipient_email": sh.Recipient.Email,
+		"recipient_phone": sh.Recipient.Phone,
+		"recipient_city":  sh.Recipient.City,
+		"current_city":    sh.CurrentLocationCity,
+		"current_hub":     sh.CurrentLocationHub,
+	}
+	subject := "logistics.shipment_" + milestone
+	if err := s.nc.Publish(subject, subject, data); err != nil {
+		s.log.Error("Failed to publish milestone",
+			zap.String("subject", subject),
+			zap.String("shipment_id", sh.ID),
+			zap.Error(err))
 	}
 }

@@ -46,6 +46,11 @@ func (c *Consumer) Start() error {
 		{"inventory.low_stock", c.handleInventoryLowStock},
 		{"logistics.shipment_created", c.handleLogisticsShipmentCreated},
 		{"logistics.shipment_status_changed", c.handleLogisticsShipmentStatusChanged},
+		{"logistics.shipment_out_for_delivery", c.handleShipmentMilestone("out_for_delivery", "Out for delivery", "is on its way to recipient today")},
+		{"logistics.shipment_delivered", c.handleShipmentMilestone("delivered", "Delivered", "has been delivered to recipient")},
+		{"logistics.shipment_attempted", c.handleShipmentMilestone("attempted", "Delivery attempted", "delivery attempt failed — will retry")},
+		{"logistics.shipment_returned", c.handleShipmentMilestone("returned", "Returned to sender", "is being returned after failed attempts")},
+		{"logistics.shipment_redirected", c.handleShipmentMilestone("redirected", "Redirected", "destination address was changed mid-transit")},
 	}
 
 	for _, s := range subjects {
@@ -185,6 +190,32 @@ func (c *Consumer) handleLogisticsShipmentStatusChanged(ev natspkg.Event) error 
 		fmt.Sprintf("Shipment %s (order %s): %s → %s", data.ShipmentID, data.OrderID, data.PreviousStatus, data.NewStatus),
 	)
 	return nil
+}
+
+func (c *Consumer) handleShipmentMilestone(_, title, descriptor string) natspkg.Handler {
+	return func(ev natspkg.Event) error {
+		var data struct {
+			ShipmentID     string `json:"shipment_id"`
+			OrderID        string `json:"order_id"`
+			TrackingNumber string `json:"tracking_number"`
+			Status         string `json:"status"`
+			RecipientEmail string `json:"recipient_email"`
+			RecipientCity  string `json:"recipient_city"`
+			CurrentCity    string `json:"current_city"`
+			CurrentHub     string `json:"current_hub"`
+		}
+		if err := ev.DecodeData(&data); err != nil {
+			c.log.Error("Failed to decode shipment milestone event", zap.Error(err))
+			return nil
+		}
+
+		msg := fmt.Sprintf("Shipment %s %s", data.TrackingNumber, descriptor)
+		if data.RecipientCity != "" {
+			msg += fmt.Sprintf(" (city: %s)", data.RecipientCity)
+		}
+		c.broadcastNotification(string(notification.TypeShipmentUpdated), title, msg)
+		return nil
+	}
 }
 
 func (c *Consumer) handleNotificationSend(ev natspkg.Event) error {
