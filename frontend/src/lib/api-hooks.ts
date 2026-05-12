@@ -35,23 +35,29 @@ export function useApiQuery<T>(
 }
 
 export function useApiMutation<TData, TVariables>(
-  method: "POST" | "PUT" | "DELETE",
+  method: "POST" | "PUT" | "PATCH" | "DELETE",
   pathFn: (variables: TVariables) => string,
   options?: Omit<
     UseMutationOptions<TData, ApiError, TVariables>,
     "mutationFn"
   > & {
     invalidateKeys?: string[][];
+    bodyFn?: (variables: TVariables) => unknown;
   },
 ) {
   const queryClient = useQueryClient();
-  const { invalidateKeys, ...mutationOptions } = options || {};
+  const { invalidateKeys, bodyFn, ...mutationOptions } = options || {};
 
   return useMutation<TData, ApiError, TVariables>({
     mutationFn: (variables: TVariables) =>
       apiFetch<TData>(pathFn(variables), {
         method,
-        body: method !== "DELETE" ? variables : undefined,
+        body:
+          method === "DELETE"
+            ? undefined
+            : bodyFn
+              ? bodyFn(variables)
+              : variables,
       }),
     onSuccess: (...args) => {
       if (invalidateKeys) {

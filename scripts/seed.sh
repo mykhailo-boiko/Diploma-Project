@@ -845,6 +845,143 @@ PSQL
   log_info "Quick-cancel forensic seed complete (~25 events)"
 }
 
+# ---------- 8c. Postal tracking events + recipient/sender backfill ----------
+
+seed_postal_tracking() {
+  log_step "Seeding Postal Tracking Events"
+
+  if ! docker compose exec -T postgres psql -U postgres -d chainorchestra >/dev/null 2>&1 <<'PSQL'
+SELECT 1;
+PSQL
+  then
+    log_warn "Cannot reach postgres via docker compose; skipping postal seed"
+    return 0
+  fi
+
+  docker compose exec -T postgres psql -U postgres -d chainorchestra -v ON_ERROR_STOP=1 <<'PSQL'
+WITH order_customer AS (
+  SELECT id::text AS oid, customer_name FROM orders.orders
+),
+parsed AS (
+  SELECT
+    s.id, s.order_id, s.address,
+    oc.customer_name,
+    trim(split_part(s.address, ',', 1)) AS street,
+    trim(split_part(s.address, ',', 2)) AS street_number,
+    trim(split_part(s.address, ',', 3)) AS city,
+    trim(split_part(s.address, ',', 4)) AS country_zip
+  FROM logistics.shipment s
+  LEFT JOIN order_customer oc ON oc.oid = s.order_id
+  WHERE s.recipient = '{}'::jsonb OR s.recipient IS NULL
+)
+UPDATE logistics.shipment s
+SET recipient = jsonb_build_object(
+    'full_name', COALESCE(p.customer_name, 'Customer'),
+    'phone',     '+38050' || LPAD((FLOOR(RANDOM()*9999999))::text, 7, '0'),
+    'email',     LOWER(REPLACE(COALESCE(p.customer_name, 'customer'), ' ', '.')) || '@example.com',
+    'street',    NULLIF(p.street || ', ' || p.street_number, ', '),
+    'city',      NULLIF(p.city, ''),
+    'country',   CASE WHEN p.country_zip LIKE '%Ukraine%' THEN 'Ukraine' ELSE TRIM(p.country_zip) END,
+    'postcode',  TRIM(SUBSTRING(p.country_zip FROM '\d+'))
+)
+FROM parsed p
+WHERE s.id = p.id;
+
+UPDATE logistics.shipment s
+SET sender = jsonb_build_object(
+    'company',   w.name,
+    'full_name', 'Warehouse Operations',
+    'phone',     '+38067' || LPAD((FLOOR(RANDOM()*9999999))::text, 7, '0'),
+    'email',     'ops+' || REPLACE(LOWER(w.name), ' ', '') || '@chainorchestra.local',
+    'street',    w.address,
+    'city',      CASE
+        WHEN w.name ILIKE '%Kyiv%'  THEN 'Kyiv'
+        WHEN w.name ILIKE '%Lviv%'  THEN 'Lviv'
+        WHEN w.name ILIKE '%Odesa%' THEN 'Odesa'
+        ELSE 'Kyiv' END,
+    'country',   'Ukraine'
+)
+FROM inventory.warehouse w
+WHERE s.warehouse_id = w.id::text AND (s.sender = '{}'::jsonb OR s.sender IS NULL);
+
+UPDATE logistics.shipment
+SET estimated_delivery_at = created_at + (96 + (random() * 72)::int) * INTERVAL '1 hour'
+WHERE estimated_delivery_at IS NULL;
+
+DELETE FROM logistics.shipment_event;
+DELETE FROM logistics.delivery_attempt;
+UPDATE logistics.shipment SET delivery_attempts = 0;
+
+WITH events_to_add AS (
+  SELECT id, created_at, updated_at, status,
+         sender->>'city' AS origin_city,
+         recipient->>'city' AS dest_city
+  FROM logistics.shipment
+)
+INSERT INTO logistics.shipment_event (shipment_id, event_type, location_city, location_hub, notes, occurred_at, recorded_by)
+SELECT id, 'label_created', origin_city, NULL, 'Shipping label created', created_at, 'system'
+FROM events_to_add
+UNION ALL
+SELECT id, 'picked_up', origin_city, NULL, 'Picked up by carrier from warehouse',
+       created_at + INTERVAL '2 hours', 'carrier_api'
+FROM events_to_add WHERE status NOT IN ('cancelled', 'created', 'label_created', 'awaiting_pickup')
+UNION ALL
+SELECT id, 'in_transit', NULL, NULL, 'In transit between hubs',
+       created_at + INTERVAL '8 hours', 'carrier_api'
+FROM events_to_add WHERE status NOT IN ('cancelled', 'created', 'label_created', 'awaiting_pickup', 'picked_up')
+UNION ALL
+SELECT id, 'hub_arrived', dest_city, dest_city || ' Sorting Hub',
+       'Arrived at destination sorting hub',
+       created_at + INTERVAL '24 hours', 'carrier_api'
+FROM events_to_add WHERE status IN ('out_for_delivery', 'delivered', 'delivery_attempted', 'failed', 'returned', 'returned_to_sender', 'held_at_office', 'in_transit', 'at_hub')
+UNION ALL
+SELECT id, 'out_for_delivery', dest_city, NULL, 'Out for delivery with driver',
+       created_at + INTERVAL '48 hours', 'carrier_api'
+FROM events_to_add WHERE status IN ('out_for_delivery', 'delivered', 'delivery_attempted', 'failed', 'returned', 'returned_to_sender', 'held_at_office')
+UNION ALL
+SELECT id, 'delivered', dest_city, NULL, 'Package delivered', updated_at, 'driver'
+FROM events_to_add WHERE status = 'delivered'
+UNION ALL
+SELECT id, 'delivery_attempted', dest_city, NULL, 'No one home — left notice', updated_at, 'driver'
+FROM events_to_add WHERE status IN ('delivery_attempted', 'failed', 'returned', 'returned_to_sender')
+UNION ALL
+SELECT id, 'returned_to_sender', origin_city, NULL,
+       'Returned to sender after failed attempts',
+       updated_at + INTERVAL '24 hours', 'system'
+FROM events_to_add WHERE status IN ('returned', 'returned_to_sender');
+
+UPDATE logistics.shipment
+SET delivered_at = updated_at,
+    delivery_signature = recipient->>'full_name',
+    delivery_attempts = 1
+WHERE status = 'delivered';
+
+INSERT INTO logistics.delivery_attempt (shipment_id, attempt_number, reason, notes, occurred_at)
+SELECT id, 1, 'no_one_home', 'First attempt — left notice', updated_at - INTERVAL '24 hours'
+FROM logistics.shipment WHERE status IN ('delivery_attempted', 'failed', 'returned', 'returned_to_sender');
+
+INSERT INTO logistics.delivery_attempt (shipment_id, attempt_number, reason, notes, occurred_at)
+SELECT id, 2, 'no_one_home', 'Second attempt', updated_at - INTERVAL '12 hours'
+FROM logistics.shipment WHERE status IN ('returned', 'returned_to_sender');
+
+INSERT INTO logistics.delivery_attempt (shipment_id, attempt_number, reason, notes, occurred_at)
+SELECT id, 3, 'refused', 'Final attempt — unreachable', updated_at - INTERVAL '4 hours'
+FROM logistics.shipment WHERE status IN ('returned', 'returned_to_sender');
+
+UPDATE logistics.shipment SET delivery_attempts = 1
+WHERE status IN ('delivery_attempted', 'failed');
+UPDATE logistics.shipment SET delivery_attempts = 3
+WHERE status IN ('returned', 'returned_to_sender');
+
+UPDATE logistics.shipment
+SET current_location_city = recipient->>'city',
+    current_location_hub  = (recipient->>'city') || ' Sorting Hub'
+WHERE status IN ('in_transit', 'at_hub', 'out_for_delivery');
+PSQL
+
+  log_info "Postal tracking seed complete"
+}
+
 # ---------- 9. Verify ----------
 
 verify_data() {
@@ -944,6 +1081,7 @@ main() {
   create_shipments
   seed_notifications
   seed_quick_cancellations
+  seed_postal_tracking
   verify_data
 
   log_step "Seed Complete"
