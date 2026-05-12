@@ -30,6 +30,12 @@ func New(target string, log *zap.Logger) (*ReverseProxy, error) {
 			if role := pr.In.Header.Get("X-User-Role"); role != "" {
 				pr.Out.Header.Set("X-User-Role", role)
 			}
+			if email := pr.In.Header.Get("X-User-Email"); email != "" {
+				pr.Out.Header.Set("X-User-Email", email)
+			}
+			if trace := pr.In.Header.Get("X-Trace-ID"); trace != "" {
+				pr.Out.Header.Set("X-Trace-ID", trace)
+			}
 		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			log.Error("Proxy error",

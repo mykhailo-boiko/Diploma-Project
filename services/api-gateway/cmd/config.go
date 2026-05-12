@@ -17,6 +17,8 @@ type config struct {
 	LogisticsService string
 	AnalyticsService     string
 	NotificationService  string
+	SimulatorService     string
+	NatsURL              string
 }
 
 func loadConfig() config {
@@ -31,6 +33,8 @@ func loadConfig() config {
 		LogisticsService: envOrDefault("LOGISTICS_SERVICE_URL", "http://localhost:8004"),
 		AnalyticsService:     envOrDefault("ANALYTICS_SERVICE_URL", "http://localhost:8005"),
 		NotificationService:  envOrDefault("NOTIFICATION_SERVICE_URL", "http://localhost:8006"),
+		SimulatorService:     envOrDefault("SIMULATOR_SERVICE_URL", "http://localhost:8007"),
+		NatsURL:              envOrDefault("NATS_URL", "nats://localhost:4222"),
 	}
 }
 

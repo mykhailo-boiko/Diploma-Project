@@ -9,7 +9,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/nats-io/nats.go"
 	"go.uber.org/zap"
+
+	"github.com/haradrim/chainorchestra/services/api-gateway/internal/realtime"
 )
 
 func main() {
@@ -22,7 +25,26 @@ func main() {
 
 	cfg := loadConfig()
 
-	router, err := newRouter(cfg, log)
+	var nc *nats.Conn
+	var hub *realtime.Hub
+	if cfg.NatsURL != "" {
+		nc, err = nats.Connect(cfg.NatsURL,
+			nats.Name("api-gateway"),
+			nats.MaxReconnects(-1),
+			nats.ReconnectWait(2*time.Second),
+		)
+		if err != nil {
+			log.Warn("NATS connect failed; realtime stream disabled", zap.Error(err))
+		} else {
+			hub = realtime.NewHub(nc, log.Named("realtime"))
+			if err := hub.Start(); err != nil {
+				log.Warn("Realtime hub start failed", zap.Error(err))
+				hub = nil
+			}
+		}
+	}
+
+	router, err := newRouter(cfg, hub, log)
 	if err != nil {
 		log.Fatal("Failed to create router", zap.Error(err))
 	}
@@ -31,7 +53,7 @@ func main() {
 		Addr:              cfg.Listen,
 		Handler:           router,
 		ReadHeaderTimeout: 10 * time.Second,
-		WriteTimeout:      60 * time.Second,
+		WriteTimeout:      0,
 		IdleTimeout:       120 * time.Second,
 	}
 
@@ -51,6 +73,12 @@ func main() {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
 
+	if hub != nil {
+		hub.Stop()
+	}
+	if nc != nil {
+		nc.Close()
+	}
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Error("HTTP server shutdown error", zap.Error(err))
 	}

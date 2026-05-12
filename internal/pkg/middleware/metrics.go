@@ -81,6 +81,12 @@ func (w *metricsResponseWriter) WriteHeader(code int) {
 	w.ResponseWriter.WriteHeader(code)
 }
 
+func (w *metricsResponseWriter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
 func normalizePath(path string) string {
 	if path == "/health" || path == "/health/nats" || path == "/metrics" {
 		return path

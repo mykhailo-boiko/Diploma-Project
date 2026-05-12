@@ -11,9 +11,10 @@ import (
 	"github.com/haradrim/chainorchestra/services/api-gateway/internal/gateway"
 	"github.com/haradrim/chainorchestra/services/api-gateway/internal/proxy"
 	"github.com/haradrim/chainorchestra/services/api-gateway/internal/ratelimit"
+	"github.com/haradrim/chainorchestra/services/api-gateway/internal/realtime"
 )
 
-func newRouter(cfg config, log *zap.Logger) (http.Handler, error) {
+func newRouter(cfg config, hub *realtime.Hub, log *zap.Logger) (http.Handler, error) {
 	userProxy, err := proxy.New(cfg.UserService, log.Named("proxy.user"))
 	if err != nil {
 		return nil, err
@@ -40,6 +41,11 @@ func newRouter(cfg config, log *zap.Logger) (http.Handler, error) {
 	}
 
 	notificationProxy, err := proxy.New(cfg.NotificationService, log.Named("proxy.notification"))
+	if err != nil {
+		return nil, err
+	}
+
+	simulatorProxy, err := proxy.New(cfg.SimulatorService, log.Named("proxy.simulator"))
 	if err != nil {
 		return nil, err
 	}
@@ -89,6 +95,16 @@ func newRouter(cfg config, log *zap.Logger) (http.Handler, error) {
 	mux.Handle("/api/v1/notifications/", notificationProxy)
 	mux.Handle("/api/v1/notifications", notificationProxy)
 
+	mux.Handle("/api/v1/simulator/", adminOnly(simulatorProxy))
+
+	if hub != nil {
+		mux.HandleFunc("GET /api/v1/events/stream", hub.Handle)
+	} else {
+		mux.HandleFunc("GET /api/v1/events/stream", func(w http.ResponseWriter, _ *http.Request) {
+			http.Error(w, `{"error":"realtime disabled"}`, http.StatusServiceUnavailable)
+		})
+	}
+
 	skipPrefixes := []string{
 		"/api/v1/auth/login",
 		"/api/v1/auth/refresh",
@@ -108,4 +124,14 @@ func newRouter(cfg config, log *zap.Logger) (http.Handler, error) {
 	handler = middleware.RequestID(handler)
 
 	return handler, nil
+}
+
+func adminOnly(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-User-Role") != "admin" {
+			http.Error(w, `{"error":"admin role required"}`, http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
