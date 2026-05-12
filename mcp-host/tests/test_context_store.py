@@ -1,4 +1,3 @@
-"""Tests for Redis-backed conversation history store."""
 
 import json
 from unittest.mock import AsyncMock
@@ -8,16 +7,13 @@ from google.genai import types
 
 from context_store import ContextStore, _deserialize_history, _serialize_history
 
-
 @pytest.fixture
 def mock_redis():
     return AsyncMock()
 
-
 @pytest.fixture
 def store(mock_redis):
     return ContextStore(mock_redis)
-
 
 class TestContextStoreSave:
     async def test_save_stores_json_with_ttl(self, store, mock_redis):
@@ -39,7 +35,6 @@ class TestContextStoreSave:
         data = json.loads(mock_redis.set.call_args[0][1])
         assert data == []
 
-
 class TestContextStoreLoad:
     async def test_load_existing_session(self, store, mock_redis):
         raw = json.dumps([{"role": "user", "parts": [{"text": "hi"}]}])
@@ -60,12 +55,10 @@ class TestContextStoreLoad:
         result = await store.load("corrupt")
         assert result == []
 
-
 class TestContextStoreDelete:
     async def test_delete_session(self, store, mock_redis):
         await store.delete("s1")
         mock_redis.delete.assert_awaited_once_with("history:s1")
-
 
 class TestSerializationRoundTrip:
     def test_text_part_roundtrip(self):

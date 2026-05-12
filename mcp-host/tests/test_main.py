@@ -1,4 +1,3 @@
-"""Tests for the main FastAPI application."""
 
 import time
 
@@ -8,14 +7,12 @@ import pytest
 from config import JWT_ALGORITHM, JWT_SECRET
 from main import _parse_message, app
 
-
 def _make_token(user_id: str = "u1", email: str = "test@test.com", role: str = "admin") -> str:
     return pyjwt.encode(
         {"user_id": user_id, "email": email, "role": role, "exp": int(time.time()) + 3600},
         JWT_SECRET,
         algorithm=JWT_ALGORITHM,
     )
-
 
 class TestParseMessage:
     def test_valid_json(self):
@@ -35,7 +32,6 @@ class TestParseMessage:
         result = _parse_message('{"message": "hello", "extra": {"key": "val"}}')
         assert result is not None
         assert result["message"] == "hello"
-
 
 class TestHealthEndpoint:
     @pytest.fixture
@@ -57,7 +53,6 @@ class TestHealthEndpoint:
         data = resp.json()
         assert "status" in data
         assert "tools" in data
-
 
 class TestWebSocketAuth:
     @pytest.fixture

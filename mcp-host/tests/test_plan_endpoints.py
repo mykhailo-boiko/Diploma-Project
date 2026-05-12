@@ -1,4 +1,3 @@
-"""Tests for plan REST endpoints."""
 
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock
@@ -11,13 +10,11 @@ from main import app
 from models import ExecutionPlan
 from plan_store import PlanStore
 
-
 @pytest.fixture
 def mock_plan_store():
     store = AsyncMock(spec=PlanStore)
     store.health.return_value = True
     return store
-
 
 @pytest.fixture
 def client(mock_plan_store):
@@ -30,7 +27,6 @@ def client(mock_plan_store):
     main._plan_store = mock_plan_store
     yield TestClient(app)
     main._plan_store = original
-
 
 class TestListPlans:
     def test_list_plans_returns_plans(self, client, mock_plan_store):
@@ -52,7 +48,6 @@ class TestListPlans:
         resp = client.get("/api/v1/mcp/plans/session1")
         assert resp.status_code == 200
         assert resp.json()["plans"] == []
-
 
 class TestGetPlan:
     def test_get_existing_plan(self, client, mock_plan_store):
@@ -79,7 +74,6 @@ class TestGetPlan:
         resp = client.get("/api/v1/mcp/plans/s1/nonexistent")
         assert resp.status_code == 404
         assert "not found" in resp.json()["error"]
-
 
 class TestHealthWithRedis:
     def test_health_includes_redis(self, client, mock_plan_store):

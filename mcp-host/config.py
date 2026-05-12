@@ -1,4 +1,3 @@
-"""Service configuration for MCP Host."""
 
 import os
 

@@ -1,4 +1,3 @@
-"""Tests for JWT authentication module."""
 
 import time
 
@@ -8,10 +7,8 @@ import pytest
 from auth import AuthError, UserClaims, validate_token
 from config import JWT_ALGORITHM, JWT_SECRET
 
-
 def _make_token(payload: dict, secret: str = JWT_SECRET) -> str:
     return pyjwt.encode(payload, secret, algorithm=JWT_ALGORITHM)
-
 
 class TestValidateToken:
     def test_valid_token(self):

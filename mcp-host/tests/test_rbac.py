@@ -1,4 +1,3 @@
-"""Tests for RBAC tool filtering."""
 
 from rbac import ROLE_PERMISSIONS, filter_tools_by_role
 
@@ -31,10 +30,8 @@ _ALL_TOOLS = [
     {"name": "users_password_reset", "description": "Password reset", "parameters": {}},
 ]
 
-
 def _tool_names(tools):
     return {t["name"] for t in tools}
-
 
 class TestAdminRole:
     def test_admin_sees_all_tools(self):
@@ -43,7 +40,6 @@ class TestAdminRole:
 
     def test_admin_wildcard_in_permissions(self):
         assert "*" in ROLE_PERMISSIONS["admin"]
-
 
 class TestOperatorRole:
     def test_operator_sees_orders_and_notifications(self):
@@ -92,7 +88,6 @@ class TestOperatorRole:
         assert "users_create" not in names
         assert "users_delete" not in names
 
-
 class TestWarehouseManagerRole:
     def test_sees_inventory_and_orders(self):
         result = filter_tools_by_role(_ALL_TOOLS, "warehouse_manager")
@@ -107,7 +102,6 @@ class TestWarehouseManagerRole:
         names = _tool_names(result)
         assert "shipments_list" not in names
         assert "carriers_list" not in names
-
 
 class TestLogisticsManagerRole:
     def test_sees_logistics_and_orders(self):
@@ -124,7 +118,6 @@ class TestLogisticsManagerRole:
         names = _tool_names(result)
         assert "products_list" not in names
         assert "stock_reserve" not in names
-
 
 class TestAnalystRole:
     def test_sees_analytics(self):
@@ -146,7 +139,6 @@ class TestAnalystRole:
             assert name.startswith("analytics_") or name in {"users_me", "users_update_profile"}, (
                 f"unexpected tool leaked to analyst: {name}"
             )
-
 
 class TestUnknownRole:
     def test_unknown_role_gets_only_common_tools(self):

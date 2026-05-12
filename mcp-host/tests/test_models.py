@@ -1,7 +1,5 @@
-"""Tests for execution plan models."""
 
 from models import ExecutionPlan, PlanStatus, PlanStep, StepStatus
-
 
 class TestPlanStep:
     def test_defaults(self):
@@ -20,7 +18,6 @@ class TestPlanStep:
         s1 = PlanStep(tool="a", params={})
         s2 = PlanStep(tool="b", params={})
         assert s1.id != s2.id
-
 
 class TestExecutionPlan:
     def test_create_plan(self):

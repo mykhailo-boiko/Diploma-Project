@@ -1,9 +1,7 @@
-"""Tests for MCP Client module."""
 
 import pytest
 
 from mcp_client import MCPClient
-
 
 class TestMCPClient:
     def test_initial_state(self):

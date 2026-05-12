@@ -1,8 +1,3 @@
-"""Redis-backed conversation history storage with session TTL.
-
-Stores Gemini Content objects serialized as JSON in Redis.
-Each session has a configurable TTL that refreshes on every interaction.
-"""
 
 from __future__ import annotations
 
@@ -19,18 +14,13 @@ logger = logging.getLogger(__name__)
 
 _HISTORY_KEY = "history:{session_id}"
 
-
 class ContextStore:
-    """Manages per-session conversation history in Redis."""
 
     def __init__(self, redis: aioredis.Redis) -> None:
         self._redis = redis
 
     async def load(self, session_id: str) -> list[types.Content]:
-        """Load conversation history from Redis.
 
-        Returns an empty list when the session does not exist or has expired.
-        """
         key = _HISTORY_KEY.format(session_id=session_id)
         data = await self._redis.get(key)
         if data is None:
@@ -46,21 +36,20 @@ class ContextStore:
         return _deserialize_history(items)
 
     async def save(self, session_id: str, history: list[types.Content]) -> None:
-        """Persist conversation history and refresh the session TTL."""
+
         key = _HISTORY_KEY.format(session_id=session_id)
         data = json.dumps(_serialize_history(history))
         await self._redis.set(key, data, ex=SESSION_TTL)
         logger.debug("Saved history for session %s (%d turns, TTL=%ds)", session_id, len(history), SESSION_TTL)
 
     async def delete(self, session_id: str) -> None:
-        """Clear conversation history for a session."""
+
         key = _HISTORY_KEY.format(session_id=session_id)
         await self._redis.delete(key)
         logger.info("Cleared history for session %s", session_id)
 
-
 def _serialize_history(history: list[types.Content]) -> list[dict[str, Any]]:
-    """Convert a list of Content objects to JSON-safe dicts."""
+
     result: list[dict[str, Any]] = []
     for content in history:
         parts: list[dict[str, Any]] = []
@@ -88,9 +77,8 @@ def _serialize_history(history: list[types.Content]) -> list[dict[str, Any]]:
         result.append({"role": content.role, "parts": parts})
     return result
 
-
 def _deserialize_history(items: list[dict[str, Any]]) -> list[types.Content]:
-    """Reconstruct Content objects from plain dicts."""
+
     history: list[types.Content] = []
     for item in items:
         parts: list[types.Part] = []

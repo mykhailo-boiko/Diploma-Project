@@ -1,4 +1,3 @@
-"""Gemini LLM integration with MCP tool execution loop, streaming, and execution plan tracking."""
 
 from __future__ import annotations
 
@@ -10,7 +9,10 @@ from typing import Any
 from google import genai
 from google.genai import types
 
+from budget import SessionBudget
 from config import GEMINI_API_KEY, GEMINI_FALLBACK_MODEL, GEMINI_MODEL, MAX_TOOL_ROUNDS
+from loop_guard import LoopGuard
+from observability import extract_entity_ids, logfire_span
 from mcp_client import MCPClient
 from models import ExecutionPlan
 from plan_store import PlanStore
@@ -206,8 +208,27 @@ SYSTEM_INSTRUCTION = (
     "'compliance check', 'recent admin activity' — use audit_query.\n"
     "- Compose with entity_id (for one specific entity), actor_email (for one user), or action "
     "(for one action type, e.g. 'orders.cancel').\n"
+    "- For RECONSTRUCTING the full sequence of events for a single entity ('what happened with order X',\n"
+    "  'show me the timeline of actions on shipment Y', 'why was the status changed', 'sequence of\n"
+    "  events that led to this state') — use audit_trace_by_entity(entity_id, limit). It returns\n"
+    "  {entity_id, total, trace_ids[], events[]} where events are ordered chronologically with full\n"
+    "  actor / service / params / result_status / error_message / trace_id. The trace_ids[] can be\n"
+    "  used to query Logfire for the corresponding LLM/tool spans.\n"
+    "- Every audit row carries trace_id (when set by the gateway) that links it back to the chat turn\n"
+    "  that triggered the action. Mention trace_id when explaining 'why' a decision was taken.\n"
     "- The audit log records every mutation across orders, shipments, carriers (and more services "
     "as they're added). System actions (background jobs) appear with actor_email='system@...'\n\n"
+    "ERROR HANDLING & SELF-CORRECTION:\n"
+    "- Tool failures come back as {error: {code, message, field?, expected?, received?, suggestion,\n"
+    "  examples?}}. ALWAYS read suggestion and examples before retrying — do not retry with the same\n"
+    "  payload that failed.\n"
+    "- code='loop_detected' means you called the SAME tool with the SAME args ≥3 times. Stop. Switch\n"
+    "  approach, try a different tool, or summarize what is known and ask the user.\n"
+    "- code='budget_exceeded' or 'token budget exhausted' means the session burnt its token cap.\n"
+    "  Inform the user and stop calling tools.\n"
+    "- code='invalid_status_transition' includes examples[] of valid transitions — pick one of those.\n"
+    "- code='validation_error'/'missing_field'/'invalid_field' tell you exactly which field failed,\n"
+    "  what was expected, what was received, and a suggestion. Use it to construct the next call.\n\n"
     "OPERATIONAL FORENSICS — ALWAYS PREFER DEDICATED TOOLS OVER CLIENT-SIDE LOOPS:\n"
     "- 'orders cancelled within X minutes/hour after shipped', 'quick cancel after dispatch', "
     "'shipping-handover failure', 'cancellation patterns by carrier' — use analytics_quick_cancellations. "
@@ -216,11 +237,34 @@ SYSTEM_INSTRUCTION = (
     "model will run out of tool-call budget before finishing.\n"
     "- For any cross-domain forensic query (orders + shipments, orders + stock, etc.), first scan the "
     "available analytics_* tools — there is almost always a server-side aggregator. Only fall back to "
-    "manual joining of *_list outputs when no analytics_* tool fits.\n"
+    "manual joining of *_list outputs when no analytics_* tool fits.\n\n"
+    "LIVE SIMULATION CONTEXT:\n"
+    "- The platform ships with a simulator service that continuously generates realistic supply-chain "
+    "traffic (orders, shipments progressing through 15-state postal pipeline, inventory adjustments, "
+    "notifications). When it is running, KPIs and counters shift between calls.\n"
+    "- For forecasts, comparisons or 'right now' questions while simulation is active, always fetch "
+    "FRESH data — do not assume earlier tool results are still accurate seconds later.\n"
+    "- Admin-only simulator tools (visible only when role=admin):\n"
+    "    * simulator_status() → {enabled, scenario, speed, uptime_secs, counters}. Use it to answer "
+    "'is the simulator running?', 'what scenario is active?', 'how fast is time running?', "
+    "'how many orders has the bot created today?'. Always mention the active scenario + speed when "
+    "reporting live metrics.\n"
+    "    * simulator_start(scenario, speed) → enables traffic generation. Default scenario='steady', "
+    "speed=1.0. Valid scenarios: idle | steady | holiday_spike | carrier_failure | demand_surge. "
+    "Use when user says 'start the simulator', 'enable live mode', 'turn on traffic'.\n"
+    "    * simulator_stop() → pauses all actors, counters retained. Use on 'stop the simulator', "
+    "'turn off live mode', 'halt traffic'.\n"
+    "    * simulator_set_speed(speed) → live-adjust the multiplier without restart.\n"
+    "    * simulator_set_scenario(scenario) → live-switch scenario without restart.\n"
+    "- Simulator-generated orders carry the same shape as human orders — do NOT advise the user to "
+    "filter them out unless they explicitly ask. They are part of the live operational state.\n"
+    "- When the simulator is enabled and the user asks predictive/forecast/period-comparison questions, "
+    "always fetch fresh aggregates — both sales_daily and logistics_daily are updated incrementally by "
+    "the analytics-service NATS listener on every order.created / shipment_created / shipment_delivered "
+    "event, so prior tool results may be seconds out of date.\n"
 )
 
 StreamCallback = Callable[[str, str], Awaitable[None]]
-
 
 _GEMINI_ALLOWED_SCHEMA_KEYS = {
     "type",
@@ -243,16 +287,14 @@ _GEMINI_ALLOWED_SCHEMA_KEYS = {
     "example",
 }
 
-
 def _resolve_refs(node: Any, defs: dict[str, Any], _seen: tuple = ()) -> Any:
-    """Inline-resolve $ref / $defs / definitions references so the schema is
-    self-contained (Gemini does not understand $ref/$defs)."""
+
     if isinstance(node, dict):
         if "$ref" in node and isinstance(node["$ref"], str):
             ref = node["$ref"]
             key = ref.rsplit("/", 1)[-1]
             if key in _seen:
-                return {"type": "object"}  # break recursion
+                return {"type": "object"}
             target = defs.get(key)
             if target is not None:
                 resolved = _resolve_refs(target, defs, _seen + (key,))
@@ -262,7 +304,6 @@ def _resolve_refs(node: Any, defs: dict[str, Any], _seen: tuple = ()) -> Any:
                 return _resolve_refs(merged, defs, _seen)
             return {k: v for k, v in node.items() if k != "$ref"}
 
-        # Collapse anyOf/oneOf into the first non-null branch.
         for combiner in ("anyOf", "oneOf"):
             if combiner in node and isinstance(node[combiner], list):
                 branches = [b for b in node[combiner] if not (
@@ -282,24 +323,18 @@ def _resolve_refs(node: Any, defs: dict[str, Any], _seen: tuple = ()) -> Any:
 
     return node
 
-
 def _sanitize_schema(schema: Any, _is_property_map: bool = False) -> Any:
-    """Recursively strip JSON-Schema fields Gemini does not understand.
 
-    `_is_property_map=True` when the dict represents a `properties` map (where
-    keys are field names, not schema keywords) so we don't filter keys against
-    the whitelist there.
-    """
     if isinstance(schema, dict):
         cleaned: dict[str, Any] = {}
         for k, v in schema.items():
             if _is_property_map:
-                # Keep all keys; recurse into each value as a schema node.
+
                 cleaned[k] = _sanitize_schema(v, _is_property_map=False)
                 continue
             if k not in _GEMINI_ALLOWED_SCHEMA_KEYS:
                 continue
-            # `properties` value is itself a property map — names are arbitrary.
+
             child_is_property_map = (k == "properties")
             cleaned[k] = _sanitize_schema(v, _is_property_map=child_is_property_map)
 
@@ -310,7 +345,6 @@ def _sanitize_schema(schema: Any, _is_property_map: bool = False) -> Any:
             if cleaned.get("type") == "object" and "properties" not in cleaned:
                 cleaned["properties"] = {}
 
-            # Drop required entries that don't reference existing properties
             if isinstance(cleaned.get("required"), list) and isinstance(cleaned.get("properties"), dict):
                 valid = [r for r in cleaned["required"]
                          if isinstance(r, str) and r in cleaned["properties"]]
@@ -319,7 +353,6 @@ def _sanitize_schema(schema: Any, _is_property_map: bool = False) -> Any:
                 else:
                     cleaned.pop("required", None)
 
-            # `default: null` is invalid for Gemini's schema validator.
             if "default" in cleaned and cleaned["default"] is None:
                 cleaned.pop("default")
 
@@ -330,12 +363,8 @@ def _sanitize_schema(schema: Any, _is_property_map: bool = False) -> Any:
 
     return schema
 
-
 def build_gemini_tools(mcp_tools: list[dict[str, Any]]) -> list[types.Tool]:
-    """Convert MCP tool definitions to Gemini function declarations.
 
-    Pipeline: $defs/$ref inline → drop unknown keys → enforce Gemini quirks.
-    """
     declarations = []
     for tool in mcp_tools:
         raw = dict(tool.get("parameters") or {})
@@ -360,29 +389,20 @@ def build_gemini_tools(mcp_tools: list[dict[str, Any]]) -> list[types.Tool]:
 
     return [types.Tool(function_declarations=declarations)]
 
-
 async def chat_completion(
     mcp: MCPClient,
     history: list[types.Content],
     user_message: str,
     user_role: str,
     session_id: str = "",
+    user_id: str | None = None,
+    trace_id: str | None = None,
     plan_store: PlanStore | None = None,
     on_stream: StreamCallback | None = None,
+    budget: SessionBudget | None = None,
+    loop_guard: LoopGuard | None = None,
 ) -> tuple[str, list[types.Content]]:
-    """Run a full chat turn: send user message, execute tool calls, return final text.
 
-    When plan_store is provided, creates an ExecutionPlan that tracks every tool call
-    with timing, inputs, outputs, and status.
-
-    When on_stream is provided, sends incremental updates to the client:
-      - on_stream("tool_start", "Calling orders_list...")
-      - on_stream("tool_result", "orders_list completed successfully")
-      - on_stream("tool_error", "orders_list failed: timeout after 30s")
-      - on_stream("stream", "partial text chunk")
-
-    Returns (response_text, updated_history).
-    """
     client = genai.Client(api_key=GEMINI_API_KEY)
     allowed_tools = filter_tools_by_role(mcp.tools, user_role)
     gemini_tools = build_gemini_tools(allowed_tools)
@@ -408,7 +428,12 @@ async def chat_completion(
         await plan_store.save(plan)
 
     try:
-        result_text = await _run_tool_loop(client, mcp, history, config, plan, plan_store, on_stream)
+        result_text = await _run_tool_loop(
+            client, mcp, history, config, plan, plan_store, on_stream,
+            session_id=session_id, user_id=user_id,
+            trace_id=trace_id,
+            budget=budget, loop_guard=loop_guard,
+        )
         return result_text, history
     finally:
         if plan and plan_store:
@@ -420,26 +445,19 @@ async def chat_completion(
                 except Exception as exc:
                     logger.debug("plan stream failed: %s", exc)
 
-
 def _is_retriable_empty_response(finish_reason: Any, has_content: bool) -> bool:
-    """Conditions where a retry on the fallback model is likely to help.
 
-    MALFORMED_FUNCTION_CALL: known flash glitch on parallel/complex tool calls — pro is more reliable.
-    STOP with empty parts: model exhausted output budget on internal thoughts before producing text — pro
-    has stronger reasoning compaction and a larger output budget headroom.
-    """
     if has_content:
         return False
     name = (getattr(finish_reason, "name", None) or str(finish_reason or "")).upper()
     return "MALFORMED_FUNCTION_CALL" in name or name == "STOP"
-
 
 async def _generate_with_fallback(
     client: genai.Client,
     contents: list[types.Content],
     config: types.GenerateContentConfig,
 ) -> tuple[Any, Any, Any, str]:
-    """Generate content with the primary model; on MALFORMED_FUNCTION_CALL retry once with the fallback model."""
+
     response = await client.aio.models.generate_content(
         model=GEMINI_MODEL, contents=contents, config=config,
     )
@@ -464,7 +482,6 @@ async def _generate_with_fallback(
     finish_reason = getattr(candidate, "finish_reason", None) if candidate else None
     return response, candidate, finish_reason, GEMINI_FALLBACK_MODEL
 
-
 async def _run_tool_loop(
     client: genai.Client,
     mcp: MCPClient,
@@ -473,14 +490,64 @@ async def _run_tool_loop(
     plan: ExecutionPlan | None,
     plan_store: PlanStore | None,
     on_stream: StreamCallback | None,
+    *,
+    session_id: str = "",
+    user_id: str | None = None,
+    trace_id: str | None = None,
+    budget: SessionBudget | None = None,
+    loop_guard: LoopGuard | None = None,
 ) -> str:
-    """Execute the LLM tool-calling loop with streaming and partial failure handling."""
+
     for round_num in range(MAX_TOOL_ROUNDS):
         logger.info("LLM round %d", round_num + 1)
 
-        response, candidate, finish_reason, model_used = await _generate_with_fallback(
-            client, history, config,
-        )
+        if budget and session_id:
+            status = await budget.get_status(session_id, user_id)
+            if status.exceeded:
+                msg = (
+                    f"Token budget exhausted (session used {status.session_used}/{status.session_cap}). "
+                    "I cannot continue this conversation safely. Please start a new chat and narrow your request."
+                )
+                if on_stream:
+                    await on_stream("tool_error", msg)
+                    await on_stream("stream", msg)
+                return msg
+
+        with logfire_span(
+            "gemini.generate_content",
+            model=GEMINI_MODEL,
+            session_id=session_id,
+            user_id=user_id,
+            trace_id=trace_id,
+            round=round_num + 1,
+        ) as gen_span:
+            response, candidate, finish_reason, model_used = await _generate_with_fallback(
+                client, history, config,
+            )
+            try:
+                usage = getattr(response, "usage_metadata", None)
+                if usage:
+                    gen_span.set_attribute("input_tokens", int(getattr(usage, "prompt_token_count", 0) or 0))
+                    gen_span.set_attribute("output_tokens", int(getattr(usage, "candidates_token_count", 0) or 0))
+                    gen_span.set_attribute("total_tokens", int(getattr(usage, "total_token_count", 0) or 0))
+                gen_span.set_attribute("model_used", model_used)
+                gen_span.set_attribute("finish_reason", str(finish_reason))
+            except Exception:
+                pass
+
+        if budget and session_id:
+            try:
+                usage = getattr(response, "usage_metadata", None)
+                total = int(getattr(usage, "total_token_count", 0) or 0)
+                if total > 0:
+                    bs = await budget.add_usage(session_id, user_id, total)
+                    if bs.exceeded:
+                        logger.warning(
+                            "Budget exceeded in round %d: %s (session=%d/%d)",
+                            round_num + 1, bs.reason, bs.session_used, bs.session_cap,
+                        )
+            except Exception as exc:
+                logger.debug("budget tracking failed: %s", exc)
         if model_used != GEMINI_MODEL:
             logger.info("Round %d completed via fallback model %s", round_num + 1, model_used)
         model_content = candidate.content if candidate else None
@@ -532,7 +599,33 @@ async def _run_tool_loop(
                 if plan_store:
                     await plan_store.save(plan)
 
-            result = await mcp.call_tool(tool_name, tool_args)
+            loop_result = None
+            if loop_guard and session_id:
+                loop_result = await loop_guard.check(session_id, tool_name, tool_args)
+
+            if loop_result and loop_result.loop:
+                result = {"error": {
+                    "code": "loop_detected",
+                    "message": loop_result.message,
+                    "suggestion": loop_result.suggestion,
+                    "occurrences": loop_result.occurrences,
+                }}
+            else:
+                entity_ids = extract_entity_ids(tool_args)
+                with logfire_span(
+                    "tool.call",
+                    tool_name=tool_name,
+                    session_id=session_id,
+                    user_id=user_id,
+                    trace_id=trace_id,
+                    round=round_num + 1,
+                    **entity_ids,
+                ) as tspan:
+                    result = await mcp.call_tool(tool_name, tool_args, trace_id=trace_id)
+                    is_error_flag = isinstance(result, dict) and "error" in result
+                    tspan.set_attribute("error", is_error_flag)
+                    if is_error_flag and isinstance(result.get("error"), dict):
+                        tspan.set_attribute("error_code", result["error"].get("code", ""))
 
             is_error = isinstance(result, dict) and "error" in result
 
@@ -587,9 +680,8 @@ async def _run_tool_loop(
         await on_stream("stream", text)
     return text
 
-
 def _extract_text(content: types.Content) -> str:
-    """Extract all text parts from a Content object."""
+
     if content is None or not getattr(content, "parts", None):
         return "(No text response)"
     texts = []

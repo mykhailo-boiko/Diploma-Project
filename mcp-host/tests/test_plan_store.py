@@ -1,4 +1,3 @@
-"""Tests for plan store (Redis-backed)."""
 
 from unittest.mock import AsyncMock, MagicMock
 
@@ -7,10 +6,9 @@ import pytest
 from models import ExecutionPlan
 from plan_store import PlanStore
 
-
 @pytest.fixture
 def mock_redis():
-    """Create a mock Redis client with pipeline support."""
+
     redis = AsyncMock()
     pipe = MagicMock()
     pipe.set = MagicMock(return_value=pipe)
@@ -20,11 +18,9 @@ def mock_redis():
     redis.pipeline = MagicMock(return_value=pipe)
     return redis
 
-
 @pytest.fixture
 def store(mock_redis):
     return PlanStore(mock_redis)
-
 
 class TestPlanStoreSave:
     async def test_save_creates_key_and_index(self, store, mock_redis):
@@ -36,7 +32,6 @@ class TestPlanStoreSave:
         pipe.zadd.assert_called_once()
         pipe.expire.assert_called_once()
         pipe.execute.assert_awaited_once()
-
 
 class TestPlanStoreGet:
     async def test_get_existing_plan(self, store, mock_redis):
@@ -52,7 +47,6 @@ class TestPlanStoreGet:
         mock_redis.get.return_value = None
         result = await store.get("s1", "nonexistent")
         assert result is None
-
 
 class TestPlanStoreList:
     async def test_list_by_session(self, store, mock_redis):
@@ -84,7 +78,6 @@ class TestPlanStoreList:
         mock_redis.zrevrange.return_value = []
         plans = await store.list_by_session("empty")
         assert plans == []
-
 
 class TestPlanStoreHealth:
     async def test_health_ok(self, store, mock_redis):

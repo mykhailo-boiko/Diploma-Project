@@ -1,4 +1,3 @@
-"""Tests for MCP client timeout and retry functionality."""
 
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -6,7 +5,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from mcp_client import MCPClient, ToolTimeoutError, _backoff_delay, _is_retryable
-
 
 class TestIsRetryable:
     def test_timeout_error(self):
@@ -39,7 +37,6 @@ class TestIsRetryable:
     def test_non_retryable_key_error(self):
         assert _is_retryable(KeyError("missing_key")) is False
 
-
 class TestBackoffDelay:
     def test_first_attempt(self):
         delay = _backoff_delay(0)
@@ -52,7 +49,6 @@ class TestBackoffDelay:
     def test_capped_at_max(self):
         delay = _backoff_delay(10)
         assert delay <= 14.0
-
 
 class TestCallToolTimeout:
     @pytest.mark.asyncio
@@ -71,8 +67,8 @@ class TestCallToolTimeout:
             result_mock,
         ])
 
-        with patch("mcp_client.TOOL_TIMEOUT", 1), \
-             patch("mcp_client.RETRY_BASE_DELAY", 0.01), \
+        with patch("mcp_client.TOOL_TIMEOUT", 1),\
+             patch("mcp_client.RETRY_BASE_DELAY", 0.01),\
              patch("mcp_client.RETRY_MAX_DELAY", 0.05):
             result = await client.call_tool("test_tool", {})
 
@@ -87,9 +83,9 @@ class TestCallToolTimeout:
 
         session.call_tool = AsyncMock(side_effect=asyncio.TimeoutError())
 
-        with patch("mcp_client.TOOL_TIMEOUT", 1), \
-             patch("mcp_client.RETRY_MAX_ATTEMPTS", 2), \
-             patch("mcp_client.RETRY_BASE_DELAY", 0.01), \
+        with patch("mcp_client.TOOL_TIMEOUT", 1),\
+             patch("mcp_client.RETRY_MAX_ATTEMPTS", 2),\
+             patch("mcp_client.RETRY_BASE_DELAY", 0.01),\
              patch("mcp_client.RETRY_MAX_DELAY", 0.05):
             result = await client.call_tool("test_tool", {})
 
@@ -124,7 +120,7 @@ class TestCallToolTimeout:
 
         session.call_tool = AsyncMock(side_effect=slow_call)
 
-        with patch("mcp_client.RETRY_MAX_ATTEMPTS", 1), \
+        with patch("mcp_client.RETRY_MAX_ATTEMPTS", 1),\
              patch("mcp_client.RETRY_BASE_DELAY", 0.01):
             result = await client.call_tool("test_tool", {}, timeout=0.05)
 
@@ -147,7 +143,7 @@ class TestCallToolTimeout:
             result_mock,
         ])
 
-        with patch("mcp_client.RETRY_BASE_DELAY", 0.01), \
+        with patch("mcp_client.RETRY_BASE_DELAY", 0.01),\
              patch("mcp_client.RETRY_MAX_DELAY", 0.05):
             result = await client.call_tool("test_tool", {})
 

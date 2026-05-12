@@ -1,4 +1,3 @@
-"""MCP Client — connects to the MCP Server via stdio subprocess."""
 
 from __future__ import annotations
 
@@ -25,17 +24,14 @@ from config import (
 
 logger = logging.getLogger(__name__)
 
-
 class ToolTimeoutError(Exception):
-    """Raised when a tool call exceeds the configured timeout."""
-
+    pass
 
 class ToolRetryableError(Exception):
-    """Raised for transient errors that may succeed on retry."""
-
+    pass
 
 def _is_retryable(error: Exception) -> bool:
-    """Determine if an error is transient and worth retrying."""
+
     msg = str(error).lower()
     retryable_patterns = [
         "connection",
@@ -54,13 +50,11 @@ def _is_retryable(error: Exception) -> bool:
         error, (asyncio.TimeoutError, ToolTimeoutError, ToolRetryableError, ConnectionError, OSError)
     )
 
-
 def _backoff_delay(attempt: int) -> float:
-    """Calculate exponential backoff delay with jitter."""
+
     delay = min(RETRY_BASE_DELAY * (2 ** attempt), RETRY_MAX_DELAY)
     jitter = random.uniform(0, delay * 0.3)
     return delay + jitter
-
 
 _CACHEABLE_TOOL_PREFIXES = (
     "analytics_",
@@ -88,43 +82,38 @@ _MUTATION_TOOL_HINTS = (
 )
 
 _PER_TOOL_TTL: dict[str, int] = {
-    "analytics_anomalies": 300,
-    "analytics_carriers_performance": 300,
-    "analytics_quick_cancellations": 300,
-    "analytics_rebalancing_recommendations": 180,
-    "analytics_sales_summary": 300,
-    "analytics_sales_trends": 300,
-    "analytics_period_comparison": 300,
-    "customers_profile_360": 120,
-    "audit_query": 30,
+    "analytics_anomalies": 60,
+    "analytics_carriers_performance": 60,
+    "analytics_quick_cancellations": 60,
+    "analytics_rebalancing_recommendations": 60,
+    "analytics_sales_summary": 30,
+    "analytics_sales_trends": 30,
+    "analytics_period_comparison": 60,
+    "customers_profile_360": 60,
+    "audit_query": 15,
     "users_me": 30,
+    "simulator_status": 0,
 }
 
-_DEFAULT_CACHE_TTL = 120
-
+_DEFAULT_CACHE_TTL = 30
 
 def _is_cacheable(name: str) -> bool:
     if any(hint in name for hint in _MUTATION_TOOL_HINTS):
         return False
     return any(name == p or name.startswith(p) for p in _CACHEABLE_TOOL_PREFIXES)
 
-
 def _is_mutation(name: str) -> bool:
     return any(hint in name for hint in _MUTATION_TOOL_HINTS)
 
-
 def _ttl_for(name: str) -> int:
     return _PER_TOOL_TTL.get(name, _DEFAULT_CACHE_TTL)
-
 
 def _cache_key(name: str, arguments: dict[str, Any]) -> str:
     canonical = json.dumps(arguments, sort_keys=True, default=str)
     digest = hashlib.sha256(f"{name}|{canonical}".encode()).hexdigest()[:32]
     return f"toolcache:{digest}"
 
-
 class MCPClient:
-    """Manages a persistent connection to the MCP Server subprocess."""
 
     def __init__(self, redis: Any | None = None) -> None:
         self._session: ClientSession | None = None
@@ -141,7 +130,7 @@ class MCPClient:
         self._redis = redis_client
 
     async def connect(self) -> None:
-        """Start the MCP Server subprocess and initialize the session."""
+
         env = {**os.environ, **MCP_SERVER_ENV}
         server_params = StdioServerParameters(
             command=MCP_SERVER_CMD,
@@ -170,7 +159,7 @@ class MCPClient:
         logger.info("MCP Client connected — %d tools available", len(self._tools))
 
     async def close(self) -> None:
-        """Shut down the MCP session and subprocess."""
+
         if self._session_context is not None:
             try:
                 await self._session_context.__aexit__(None, None, None)
@@ -186,7 +175,7 @@ class MCPClient:
 
     @property
     def tools(self) -> list[dict[str, Any]]:
-        """Return cached tool definitions."""
+
         return list(self._tools)
 
     async def call_tool(
@@ -194,13 +183,13 @@ class MCPClient:
         name: str,
         arguments: dict[str, Any],
         timeout: int | None = None,
+        trace_id: str | None = None,
     ) -> Any:
-        """Execute a tool via MCP with timeout and retry on transient failures.
 
-        Returns the parsed JSON content on success, or an error dict on failure.
-        """
         if self._session is None:
             return {"error": "MCP session not connected"}
+
+        _ = trace_id  # propagated for telemetry only; stdio MCP does not forward headers
 
         if self._redis is not None and _is_cacheable(name):
             cached = await self._cache_get(name, arguments)
@@ -276,11 +265,14 @@ class MCPClient:
             return None
 
     async def _cache_set(self, name: str, arguments: dict[str, Any], value: Any) -> None:
+        ttl = _ttl_for(name)
+        if ttl <= 0:
+            return
         try:
             await self._redis.set(
                 _cache_key(name, arguments),
                 json.dumps(value, default=str),
-                ex=_ttl_for(name),
+                ex=ttl,
             )
         except Exception as exc:
             logger.debug("cache set failed for %s: %s", name, exc)

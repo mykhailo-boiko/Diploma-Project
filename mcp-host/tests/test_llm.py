@@ -1,7 +1,5 @@
-"""Tests for LLM integration module."""
 
 from llm import SYSTEM_INSTRUCTION, build_gemini_tools
-
 
 class TestBuildGeminiTools:
     def test_converts_mcp_tools(self):

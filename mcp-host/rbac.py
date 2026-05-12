@@ -1,8 +1,3 @@
-"""Role-based access control for MCP tools.
-
-Filters available tools based on the user's role before sending them to the LLM.
-Admin sees all tools; other roles see only their permitted tool prefixes.
-"""
 
 from __future__ import annotations
 
@@ -26,24 +21,15 @@ ROLE_PERMISSIONS: dict[str, tuple[str, ...]] = {
     "analyst": _ANALYTICS_PREFIXES,
 }
 
-
 def _is_common_tool(name: str) -> bool:
-    """Return True if the tool is available to every role."""
-    return any(name == prefix or name.startswith(prefix) for prefix in _COMMON_PREFIXES)
 
+    return any(name == prefix or name.startswith(prefix) for prefix in _COMMON_PREFIXES)
 
 def filter_tools_by_role(
     tools: list[dict[str, Any]],
     user_role: str,
 ) -> list[dict[str, Any]]:
-    """Return only the tools the given role is allowed to use.
 
-    Rules:
-    * ``admin`` sees everything.
-    * Other roles see tools whose name starts with one of their permitted prefixes,
-      plus a common set of auth/profile tools.
-    * Unknown roles get only the common tools.
-    """
     prefixes = ROLE_PERMISSIONS.get(user_role)
 
     if prefixes and "*" in prefixes:

@@ -1,4 +1,3 @@
-"""Tests for streaming callback and partial failure handling in LLM module."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -6,9 +5,8 @@ import pytest
 
 from llm import _extract_text, chat_completion
 
-
 def _mock_content(text: str | None = None, function_calls: list | None = None):
-    """Create a mock Content object."""
+
     parts = []
     if text:
         part = MagicMock()
@@ -28,20 +26,18 @@ def _mock_content(text: str | None = None, function_calls: list | None = None):
     content.parts = parts
     return content
 
-
 def _mock_response(content):
-    """Create a mock Gemini response."""
+
     candidate = MagicMock()
     candidate.content = content
     response = MagicMock()
     response.candidates = [candidate]
     return response
 
-
 class TestStreamCallback:
     @pytest.mark.asyncio
     async def test_stream_called_on_final_text(self):
-        """on_stream('stream', text) is called when LLM produces final text."""
+
         on_stream = AsyncMock()
         mock_mcp = MagicMock()
         mock_mcp.tools = [{"name": "t", "description": "d", "parameters": {"type": "object", "properties": {}}}]
@@ -49,7 +45,7 @@ class TestStreamCallback:
         final_content = _mock_content(text="Here are your orders.")
         mock_response = _mock_response(final_content)
 
-        with patch("llm.genai") as mock_genai, \
+        with patch("llm.genai") as mock_genai,\
              patch("llm.filter_tools_by_role", return_value=mock_mcp.tools):
             mock_client = MagicMock()
             mock_genai.Client.return_value = mock_client
@@ -68,7 +64,7 @@ class TestStreamCallback:
 
     @pytest.mark.asyncio
     async def test_stream_tool_start_and_result(self):
-        """on_stream emits tool_start and tool_result for successful tool calls."""
+
         on_stream = AsyncMock()
         mock_mcp = MagicMock()
         mock_mcp.tools = [
@@ -79,7 +75,7 @@ class TestStreamCallback:
         fc_content = _mock_content(function_calls=[{"name": "orders_list", "args": {}, "id": None}])
         final_content = _mock_content(text="No orders found.")
 
-        with patch("llm.genai") as mock_genai, \
+        with patch("llm.genai") as mock_genai,\
              patch("llm.filter_tools_by_role", return_value=mock_mcp.tools):
             mock_client = MagicMock()
             mock_genai.Client.return_value = mock_client
@@ -100,7 +96,7 @@ class TestStreamCallback:
 
     @pytest.mark.asyncio
     async def test_stream_tool_error_and_partial_failure(self):
-        """on_stream emits tool_error and partial_failure when a tool fails."""
+
         on_stream = AsyncMock()
         mock_mcp = MagicMock()
         mock_mcp.tools = [
@@ -118,7 +114,7 @@ class TestStreamCallback:
         ])
         final_content = _mock_content(text="Orders found, but inventory unavailable.")
 
-        with patch("llm.genai") as mock_genai, \
+        with patch("llm.genai") as mock_genai,\
              patch("llm.filter_tools_by_role", return_value=mock_mcp.tools):
             mock_client = MagicMock()
             mock_genai.Client.return_value = mock_client
@@ -143,14 +139,14 @@ class TestStreamCallback:
 
     @pytest.mark.asyncio
     async def test_no_stream_when_callback_is_none(self):
-        """No error when on_stream is None (backward compatibility)."""
+
         mock_mcp = MagicMock()
         mock_mcp.tools = []
 
         final_content = _mock_content(text="Hello.")
         mock_response = _mock_response(final_content)
 
-        with patch("llm.genai") as mock_genai, \
+        with patch("llm.genai") as mock_genai,\
              patch("llm.filter_tools_by_role", return_value=[]):
             mock_client = MagicMock()
             mock_genai.Client.return_value = mock_client
@@ -165,7 +161,6 @@ class TestStreamCallback:
             )
 
         assert result == "Hello."
-
 
 class TestExtractText:
     def test_single_text_part(self):

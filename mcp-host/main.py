@@ -1,4 +1,3 @@
-"""MCP Host — FastAPI WebSocket server with Gemini LLM and MCP tool execution."""
 
 from __future__ import annotations
 
@@ -14,10 +13,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from auth import AuthError, validate_token
+from budget import SessionBudget
 from config import HOST, PORT, REDIS_URL
 from context_store import ContextStore
 from llm import chat_completion
+from loop_guard import LoopGuard
 from mcp_client import MCPClient
+from observability import instrument_fastapi, instrument_httpx, logfire_span, setup_logfire
 from plan_store import PlanStore
 
 logging.basicConfig(
@@ -26,15 +28,19 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+setup_logfire("mcp-host")
+instrument_httpx()
+
 mcp = MCPClient()
 
 _plan_store: PlanStore | None = None
 _context_store: ContextStore | None = None
-
+_budget = SessionBudget()
+_loop_guard = LoopGuard()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Start/stop the MCP Client and Redis with the application."""
+
     global _plan_store, _context_store  # noqa: PLW0603
 
     redis_client = aioredis.from_url(REDIS_URL, decode_responses=False)
@@ -42,6 +48,8 @@ async def lifespan(app: FastAPI):
     _context_store = ContextStore(redis_client)
     cache_redis = aioredis.from_url(REDIS_URL, decode_responses=True)
     mcp.attach_cache(cache_redis)
+    _budget.attach(cache_redis)
+    _loop_guard.attach(cache_redis)
     logger.info("Redis connected: %s", REDIS_URL)
 
     await mcp.connect()
@@ -51,8 +59,8 @@ async def lifespan(app: FastAPI):
     await redis_client.aclose()
     logger.info("MCP Host stopped")
 
-
 app = FastAPI(title="MCP Host", version="0.1.0", lifespan=lifespan)
+instrument_fastapi(app)
 
 app.add_middleware(
     CORSMiddleware,
@@ -62,10 +70,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 @app.get("/health")
 async def health() -> JSONResponse:
-    """Health check endpoint."""
+
     connected = mcp._session is not None
     tools_count = len(mcp.tools)
     redis_ok = await _plan_store.health() if _plan_store else False
@@ -75,19 +82,29 @@ async def health() -> JSONResponse:
         "redis": "ok" if redis_ok else "disconnected",
     })
 
+@app.get("/api/v1/mcp/budget/{session_id}")
+async def get_budget(session_id: str, user_id: str | None = None) -> JSONResponse:
+
+    status = await _budget.get_status(session_id, user_id)
+    return JSONResponse({
+        "session_used": status.session_used,
+        "session_cap": status.session_cap,
+        "user_hour_used": status.user_hour_used,
+        "user_hour_cap": status.user_hour_cap,
+        "exceeded": status.exceeded,
+    })
 
 @app.get("/api/v1/mcp/plans/{session_id}")
 async def list_plans(session_id: str) -> JSONResponse:
-    """List execution plans for a session."""
+
     if _plan_store is None:
         return JSONResponse({"error": "plan store not available"}, status_code=503)
     plans = await _plan_store.list_by_session(session_id)
     return JSONResponse({"plans": plans})
 
-
 @app.get("/api/v1/mcp/plans/{session_id}/{plan_id}")
 async def get_plan(session_id: str, plan_id: str) -> JSONResponse:
-    """Get details of a specific execution plan."""
+
     if _plan_store is None:
         return JSONResponse({"error": "plan store not available"}, status_code=503)
     plan = await _plan_store.get(session_id, plan_id)
@@ -95,15 +112,9 @@ async def get_plan(session_id: str, plan_id: str) -> JSONResponse:
         return JSONResponse({"error": "plan not found"}, status_code=404)
     return JSONResponse(plan.model_dump(mode="json"))
 
-
 @app.websocket("/ws/chat")
 async def websocket_chat(ws: WebSocket) -> None:
-    """WebSocket chat endpoint.
 
-    JWT token is passed as a query parameter: /ws/chat?token=<jwt>
-    Each message is a JSON object: {"message": "user text"}
-    Responses are JSON objects: {"type": "message", "content": "..."} or {"type": "error", "content": "..."}
-    """
     token = ws.query_params.get("token", "")
     if not token:
         await ws.close(code=4001, reason="missing token")
@@ -155,16 +166,32 @@ async def websocket_chat(ws: WebSocket) -> None:
             async def on_stream(msg_type: str, content: str) -> None:
                 await _send(ws, msg_type, content)
 
+            trace_id = msg.get("trace_id") if isinstance(msg, dict) else None
+
             try:
-                response_text, updated_history = await chat_completion(
-                    mcp=mcp,
-                    history=history,
-                    user_message=user_text,
-                    user_role=claims.role,
+                with logfire_span(
+                    "chat.turn",
                     session_id=session_id,
-                    plan_store=_plan_store,
-                    on_stream=on_stream,
-                )
+                    user_id=claims.user_id,
+                    user_email=claims.email,
+                    user_role=claims.role,
+                    trace_id=trace_id,
+                    message_preview=user_text[:200],
+                ) as span:
+                    response_text, updated_history = await chat_completion(
+                        mcp=mcp,
+                        history=history,
+                        user_message=user_text,
+                        user_role=claims.role,
+                        session_id=session_id,
+                        user_id=claims.user_id,
+                        trace_id=trace_id,
+                        plan_store=_plan_store,
+                        on_stream=on_stream,
+                        budget=_budget,
+                        loop_guard=_loop_guard,
+                    )
+                    span.set_attribute("response_length", len(response_text))
                 history = updated_history
                 if _context_store:
                     await _context_store.save(session_id, history)
@@ -183,14 +210,12 @@ async def websocket_chat(ws: WebSocket) -> None:
         except Exception:
             pass
 
-
 async def _send(ws: WebSocket, msg_type: str, content: str) -> None:
-    """Send a typed JSON message over WebSocket."""
+
     await ws.send_json({"type": msg_type, "content": content})
 
-
 def _parse_message(raw: str) -> dict[str, Any] | None:
-    """Parse incoming WebSocket message as JSON."""
+
     try:
         data = json.loads(raw)
         if isinstance(data, dict):
@@ -199,11 +224,9 @@ def _parse_message(raw: str) -> dict[str, Any] | None:
         pass
     return None
 
-
 def main() -> None:
-    """Run the MCP Host server."""
-    uvicorn.run("main:app", host=HOST, port=PORT, log_level="info")
 
+    uvicorn.run("main:app", host=HOST, port=PORT, log_level="info")
 
 if __name__ == "__main__":
     main()
