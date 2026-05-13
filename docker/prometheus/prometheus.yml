@@ -42,3 +42,8 @@ scrape_configs:
     static_configs:
       - targets: ["simulator-service:8007"]
     metrics_path: /metrics
+
+  - job_name: "mcp-host"
+    static_configs:
+      - targets: ["mcp-host:8090"]
+    metrics_path: /metrics

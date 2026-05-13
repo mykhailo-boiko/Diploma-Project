@@ -25,6 +25,7 @@ func newRouter(ctrl *controller.LogisticsController, nc *natspkg.Client) http.Ha
 
 	mux.HandleFunc("POST /api/v1/shipments/bulk-status", ctrl.BulkUpdateShipmentStatus)
 	mux.HandleFunc("POST /api/v1/shipments/reassign-carrier", ctrl.ReassignCarrier)
+	mux.HandleFunc("GET /api/v1/shipments/in-transit-summary", ctrl.InTransitSummary)
 	mux.HandleFunc("GET /api/v1/tracking/{tracking_number}", ctrl.TrackingByNumber)
 	mux.HandleFunc("GET /api/v1/public/tracking/{tracking_number}", ctrl.PublicTracking)
 	mux.HandleFunc("GET /api/v1/shipments/{id}/timeline", ctrl.GetTimeline)

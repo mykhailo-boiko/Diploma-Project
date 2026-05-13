@@ -105,9 +105,8 @@ func (c *InventoryController) CreateProduct(w http.ResponseWriter, r *http.Reque
 }
 
 func (c *InventoryController) GetProduct(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	if id == "" {
-		httpresponse.BadRequest(w, "validation_error", "product id is required")
+	id, ok := httpresponse.ValidateUUIDPath(w, r, "id")
+	if !ok {
 		return
 	}
 
@@ -429,6 +428,14 @@ func (c *InventoryController) AdjustStock(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	if req.Reason == "" && (req.Type == stock.MovementTypeOutbound || req.Type == stock.MovementTypeAdjustment) {
+		httpresponse.MissingField(w, "reason",
+			"non-empty string explaining the adjustment",
+			"Outbound and adjustment movements must record a reason for the audit trail.",
+			"customer order", "damage write-off", "physical count correction")
+		return
+	}
+
 	result, err := c.svc.AdjustStock(r.Context(), req)
 	if err != nil {
 		if errors.Is(err, stock.ErrStockNotFound) {
@@ -511,8 +518,10 @@ func (c *InventoryController) GetInventoryReport(w http.ResponseWriter, r *http.
 
 func (c *InventoryController) UpdateMinThreshold(w http.ResponseWriter, r *http.Request) {
 	var req UpdateMinThresholdRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httpresponse.BadRequest(w, "invalid_request", "invalid request body")
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		httpresponse.BadRequest(w, "invalid_request", "invalid request body: "+err.Error())
 		return
 	}
 
@@ -520,8 +529,19 @@ func (c *InventoryController) UpdateMinThreshold(w http.ResponseWriter, r *http.
 		httpresponse.BadRequest(w, "validation_error", "product_id and warehouse_id are required")
 		return
 	}
-	if req.Threshold < 0 {
-		httpresponse.BadRequest(w, "validation_error", "threshold must be non-negative")
+	value, ok := req.ResolvedThreshold()
+	if !ok {
+		httpresponse.MissingField(w, "min_threshold",
+			"non-negative integer",
+			"Provide 'min_threshold' (preferred) or legacy 'threshold' field.",
+			"0", "10", "50")
+		return
+	}
+	if value < 0 {
+		httpresponse.InvalidField(w, "min_threshold",
+			"non-negative integer (>= 0)", value,
+			"min_threshold cannot be negative. Use 0 to disable the threshold.",
+			"0", "10", "50")
 		return
 	}
 

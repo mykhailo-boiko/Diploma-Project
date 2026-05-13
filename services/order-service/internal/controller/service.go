@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -14,14 +15,19 @@ import (
 )
 
 type Service struct {
-	storage order.Storage
-	nc      *natspkg.Client
-	audit   *audit.Logger
-	log     *zap.Logger
+	storage    order.Storage
+	nc         *natspkg.Client
+	audit      *audit.Logger
+	log        *zap.Logger
+	productVal order.ProductValidator
 }
 
 func NewService(storage order.Storage, nc *natspkg.Client, auditLog *audit.Logger, log *zap.Logger) *Service {
 	return &Service{storage: storage, nc: nc, audit: auditLog, log: log}
+}
+
+func (s *Service) SetProductValidator(v order.ProductValidator) {
+	s.productVal = v
 }
 
 type CreateOrderRequest struct {
@@ -45,6 +51,19 @@ type CancelOrderRequest struct {
 }
 
 func (s *Service) CreateOrder(ctx context.Context, req CreateOrderRequest) (order.Order, error) {
+	if s.productVal != nil {
+		seen := make(map[string]bool, len(req.Items))
+		for _, input := range req.Items {
+			if seen[input.ProductID] {
+				continue
+			}
+			seen[input.ProductID] = true
+			if err := s.productVal.ValidateProduct(ctx, input.ProductID); err != nil {
+				return order.Order{}, err
+			}
+		}
+	}
+
 	items := make([]order.Item, 0, len(req.Items))
 	for _, input := range req.Items {
 		items = append(items, order.Item{
@@ -93,11 +112,14 @@ func (s *Service) UpdateOrderStatus(ctx context.Context, id string, newStatus or
 	}
 
 	if !order.CanTransition(current.Status, newStatus) {
-		return order.Order{}, order.ErrInvalidTransition
+		return order.Order{}, &order.InvalidTransitionError{Current: string(current.Status), Requested: string(newStatus)}
 	}
 
-	updated, err := s.storage.UpdateOrderStatus(ctx, id, newStatus)
+	updated, err := s.storage.UpdateOrderStatus(ctx, id, current.Status, newStatus)
 	if err != nil {
+		if errors.Is(err, order.ErrConcurrentStatusUpdate) {
+			return order.Order{}, err
+		}
 		return order.Order{}, fmt.Errorf("failed to update order status: %w", err)
 	}
 
@@ -124,8 +146,11 @@ func (s *Service) CancelOrder(ctx context.Context, id string, reason string) (or
 		return order.Order{}, order.ErrInvalidTransition
 	}
 
-	cancelled, err := s.storage.CancelOrder(ctx, id, reason)
+	cancelled, err := s.storage.CancelOrder(ctx, id, current.Status, reason)
 	if err != nil {
+		if errors.Is(err, order.ErrConcurrentStatusUpdate) {
+			return order.Order{}, err
+		}
 		return order.Order{}, fmt.Errorf("failed to cancel order: %w", err)
 	}
 
@@ -226,6 +251,8 @@ func (s *Service) publishOrderStatusChanged(o order.Order, previousStatus order.
 		"order_id":        o.ID,
 		"previous_status": string(previousStatus),
 		"new_status":      string(o.Status),
+		"customer_name":   o.CustomerName,
+		"total_amount":    o.TotalAmount,
 	}
 
 	if err := s.nc.Publish("order.status_changed", "order.status_changed", data); err != nil {

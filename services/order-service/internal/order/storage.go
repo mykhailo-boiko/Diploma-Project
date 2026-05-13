@@ -143,21 +143,31 @@ func (s *PostgresStorage) ListOrders(ctx context.Context, filter Filter, sort pa
 	return orders, total, nil
 }
 
-func (s *PostgresStorage) UpdateOrderStatus(ctx context.Context, id string, status Status) (Order, error) {
+func (s *PostgresStorage) UpdateOrderStatus(ctx context.Context, id string, expected, next Status) (Order, error) {
 	query := `
 		UPDATE orders.orders
 		SET status = $1, updated_at = $2
-		WHERE id = $3 AND deleted_at IS NULL
+		WHERE id = $3 AND status = $4 AND deleted_at IS NULL
 		RETURNING id, customer_name, status, total_amount, cancel_reason, created_at, updated_at`
 
 	now := time.Now().UTC()
 	var o Order
-	err := s.pool.QueryRow(ctx, query, string(status), now, id).Scan(
+	err := s.pool.QueryRow(ctx, query, string(next), now, id, string(expected)).Scan(
 		&o.ID, &o.CustomerName, &o.Status, &o.TotalAmount, &o.CancelReason, &o.CreatedAt, &o.UpdatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return Order{}, ErrOrderNotFound
+			current, getErr := s.GetOrderByID(ctx, id)
+			if errors.Is(getErr, ErrOrderNotFound) {
+				return Order{}, ErrOrderNotFound
+			}
+			if getErr != nil {
+				return Order{}, fmt.Errorf("failed to update order status: %w", err)
+			}
+			if current.Status != expected {
+				return Order{}, ErrConcurrentStatusUpdate
+			}
+			return Order{}, fmt.Errorf("failed to update order status: %w", err)
 		}
 		return Order{}, fmt.Errorf("failed to update order status: %w", err)
 	}
@@ -198,21 +208,31 @@ func (s *PostgresStorage) getOrderItems(ctx context.Context, orderID string) ([]
 	return items, nil
 }
 
-func (s *PostgresStorage) CancelOrder(ctx context.Context, id string, reason string) (Order, error) {
+func (s *PostgresStorage) CancelOrder(ctx context.Context, id string, expected Status, reason string) (Order, error) {
 	query := `
 		UPDATE orders.orders
 		SET status = $1, cancel_reason = $2, updated_at = $3
-		WHERE id = $4 AND deleted_at IS NULL
+		WHERE id = $4 AND status = $5 AND deleted_at IS NULL
 		RETURNING id, customer_name, status, total_amount, cancel_reason, created_at, updated_at`
 
 	now := time.Now().UTC()
 	var o Order
-	err := s.pool.QueryRow(ctx, query, string(StatusCancelled), reason, now, id).Scan(
+	err := s.pool.QueryRow(ctx, query, string(StatusCancelled), reason, now, id, string(expected)).Scan(
 		&o.ID, &o.CustomerName, &o.Status, &o.TotalAmount, &o.CancelReason, &o.CreatedAt, &o.UpdatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return Order{}, ErrOrderNotFound
+			current, getErr := s.GetOrderByID(ctx, id)
+			if errors.Is(getErr, ErrOrderNotFound) {
+				return Order{}, ErrOrderNotFound
+			}
+			if getErr != nil {
+				return Order{}, fmt.Errorf("failed to cancel order: %w", err)
+			}
+			if current.Status != expected {
+				return Order{}, ErrConcurrentStatusUpdate
+			}
+			return Order{}, fmt.Errorf("failed to cancel order: %w", err)
 		}
 		return Order{}, fmt.Errorf("failed to cancel order: %w", err)
 	}

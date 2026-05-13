@@ -993,10 +993,10 @@ func (s *Service) GetPeriodComparison(
 		bLabel = bFrom.Format("2006-01-02") + " — " + bTo.Format("2006-01-02")
 	}
 
-	delta := bVal - aVal
+	delta := aVal - bVal
 	pct := 0.0
-	if aVal != 0 {
-		pct = (delta / aVal) * 100.0
+	if bVal != 0 {
+		pct = (delta / bVal) * 100.0
 	}
 
 	direction := "flat"

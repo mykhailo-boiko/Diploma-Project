@@ -113,6 +113,30 @@ func (c *NotificationController) MarkAsRead(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	callerID := middleware.GetUserID(r.Context())
+	callerRole := middleware.GetUserRole(r.Context())
+
+	existing, err := c.svc.GetNotificationByID(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, notification.ErrNotificationNotFound) {
+			httpresponse.NotFound(w, "notification_not_found", "notification not found")
+			return
+		}
+		c.log.Error("Failed to load notification", zap.Error(err))
+		httpresponse.InternalError(w, "internal_error", "internal server error")
+		return
+	}
+
+	if existing.UserID != callerID && callerRole != "admin" {
+		httpresponse.Forbidden(w, "forbidden", "cannot mark another user's notification as read")
+		return
+	}
+
+	if existing.Status == "read" {
+		httpresponse.OK(w, existing)
+		return
+	}
+
 	updated, err := c.svc.MarkAsRead(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, notification.ErrNotificationNotFound) {
@@ -284,6 +308,20 @@ func parseFilter(r *http.Request, userID string) notification.Filter {
 	if s := r.URL.Query().Get("type"); s != "" {
 		t := notification.Type(s)
 		filter.Type = &t
+	}
+	if s := r.URL.Query().Get("status"); s != "" {
+		st := notification.Status(s)
+		filter.Status = &st
+	}
+	if s := r.URL.Query().Get("is_read"); s != "" {
+		switch s {
+		case "true", "1":
+			t := true
+			filter.IsRead = &t
+		case "false", "0":
+			f := false
+			filter.IsRead = &f
+		}
 	}
 
 	return filter

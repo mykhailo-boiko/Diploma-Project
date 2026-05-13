@@ -56,7 +56,7 @@ func main() {
 	auditLogger := audit.New(pool, "logistics-service", log)
 	svc := controller.NewService(shipmentStorage, carrierStorage, nc, auditLogger, log.Named("service"))
 
-	cons := consumer.NewConsumer(svc, nc, log.Named("consumer"))
+	cons := consumer.NewConsumer(svc, shipmentStorage, nc, log.Named("consumer"))
 	if err := cons.Start(); err != nil {
 		log.Fatal("Failed to start NATS consumer", zap.Error(err))
 	}

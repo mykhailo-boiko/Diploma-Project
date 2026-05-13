@@ -1,6 +1,7 @@
 
 from mcp.server.fastmcp import FastMCP
 
+from http_client import set_trace_id
 from tools import (
     analytics_tools,
     inventory_tools,
@@ -20,6 +21,14 @@ mcp = FastMCP(
         "Always confirm destructive actions before proceeding."
     ),
 )
+
+@mcp.tool(description="Internal control tool used by the host to attach a trace_id to subsequent HTTP calls. Not for direct LLM use. Args: trace_id: trace identifier string or empty to clear.")
+async def _set_trace_context(trace_id: str) -> dict[str, str]:
+    if trace_id:
+        set_trace_id(trace_id)
+    else:
+        set_trace_id(None)
+    return {"status": "ok"}
 
 orders_tools.register(mcp)
 inventory_tools.register(mcp)

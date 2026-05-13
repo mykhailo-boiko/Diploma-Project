@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"time"
@@ -224,14 +225,26 @@ func (c *AnalyticsController) GetOptimizations(w http.ResponseWriter, r *http.Re
 }
 
 func (c *AnalyticsController) GenerateReport(w http.ResponseWriter, r *http.Request) {
+	var raw map[string]any
+	bodyBytes, _ := io.ReadAll(r.Body)
+	if err := json.Unmarshal(bodyBytes, &raw); err != nil {
+		httpresponse.BadRequest(w, "validation_error", "invalid request body")
+		return
+	}
+	if _, ok := raw["report_type"]; !ok {
+		if alt, exists := raw["type"]; exists {
+			raw["report_type"] = alt
+		}
+	}
+	normalized, _ := json.Marshal(raw)
 	var req analytics.ReportRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.Unmarshal(normalized, &req); err != nil {
 		httpresponse.BadRequest(w, "validation_error", "invalid request body")
 		return
 	}
 
 	if req.ReportType == "" {
-		httpresponse.BadRequest(w, "validation_error", "report_type is required")
+		httpresponse.BadRequest(w, "validation_error", "report_type (or alias 'type') is required")
 		return
 	}
 	if req.DateFrom == "" || req.DateTo == "" {
@@ -279,18 +292,38 @@ func (c *AnalyticsController) GetForecast(w http.ResponseWriter, r *http.Request
 	if method == "" {
 		method = "linear"
 	}
+	allowedMethods := map[string]bool{"linear": true, "rolling-avg": true, "ets-simple": true}
+	if !allowedMethods[method] {
+		httpresponse.InvalidField(w, "method",
+			"one of: linear, rolling-avg, ets-simple", method,
+			"Use one of the allowed forecast methods.",
+			"linear", "rolling-avg", "ets-simple")
+		return
+	}
 
 	horizonDays := 14
 	if s := q.Get("horizon_days"); s != "" {
-		if v, err := strconv.Atoi(s); err == nil && v > 0 {
-			horizonDays = v
+		v, err := strconv.Atoi(s)
+		if err != nil || v < 1 || v > 90 {
+			httpresponse.InvalidField(w, "horizon_days",
+				"integer between 1 and 90", s,
+				"horizon_days must be 1..90 (days forward to forecast).",
+				"7", "14", "30", "90")
+			return
 		}
+		horizonDays = v
 	}
 	historyDays := 30
 	if s := q.Get("history_days"); s != "" {
-		if v, err := strconv.Atoi(s); err == nil && v > 0 {
-			historyDays = v
+		v, err := strconv.Atoi(s)
+		if err != nil || v < 7 || v > 365 {
+			httpresponse.InvalidField(w, "history_days",
+				"integer between 7 and 365", s,
+				"history_days must be within 7..365 days of training data.",
+				"30", "90", "180")
+			return
 		}
+		historyDays = v
 	}
 
 	result, err := c.svc.GetForecast(r.Context(), metric, method, historyDays, horizonDays)

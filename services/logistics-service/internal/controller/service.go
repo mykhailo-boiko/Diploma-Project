@@ -34,10 +34,11 @@ func NewService(shipments shipment.Storage, carriers carrier.Storage, nc *natspk
 }
 
 type CreateShipmentRequest struct {
-	OrderID     string `json:"order_id"`
-	WarehouseID string `json:"warehouse_id"`
-	CarrierID   string `json:"carrier_id"`
-	Address     string `json:"address"`
+	OrderID       string `json:"order_id"`
+	WarehouseID   string `json:"warehouse_id"`
+	CarrierID     string `json:"carrier_id"`
+	Address       string `json:"address"`
+	RecipientName string `json:"recipient_name,omitempty"`
 }
 
 type UpdateShipmentStatusRequest struct {
@@ -87,6 +88,18 @@ type PerformanceStats struct {
 }
 
 func (s *Service) CreateShipment(ctx context.Context, req CreateShipmentRequest) (shipment.Shipment, error) {
+	if req.CarrierID == "" {
+		picked, err := s.carriers.PickDefaultActive(ctx)
+		if err != nil {
+			return shipment.Shipment{}, fmt.Errorf("failed to pick default carrier: %w", err)
+		}
+		req.CarrierID = picked.ID
+		s.log.Info("Auto-selected default carrier for shipment",
+			zap.String("carrier_id", picked.ID),
+			zap.String("carrier_name", picked.Name),
+			zap.String("order_id", req.OrderID),
+		)
+	}
 	if _, err := s.carriers.GetCarrierByID(ctx, req.CarrierID); err != nil {
 		return shipment.Shipment{}, fmt.Errorf("failed to verify carrier: %w", err)
 	}
@@ -96,6 +109,9 @@ func (s *Service) CreateShipment(ctx context.Context, req CreateShipmentRequest)
 		WarehouseID: req.WarehouseID,
 		CarrierID:   req.CarrierID,
 		Address:     req.Address,
+	}
+	if req.RecipientName != "" {
+		sh.Recipient = shipment.Address{FullName: req.RecipientName}
 	}
 
 	created, err := s.shipments.CreateShipment(ctx, sh)
@@ -734,4 +750,8 @@ func (s *Service) publishShipmentMilestone(sh shipment.Shipment, milestone strin
 			zap.String("shipment_id", sh.ID),
 			zap.Error(err))
 	}
+}
+
+func (s *Service) InTransitSummary(ctx context.Context) (shipment.InTransitSummaryResult, error) {
+	return s.shipments.InTransitSummary(ctx)
 }

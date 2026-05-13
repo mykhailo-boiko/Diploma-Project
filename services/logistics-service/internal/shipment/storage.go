@@ -96,6 +96,24 @@ func (s *PostgresStorage) CreateShipment(ctx context.Context, sh Shipment) (Ship
 	return sh, nil
 }
 
+func (s *PostgresStorage) FindByOrderID(ctx context.Context, orderID string) ([]Shipment, error) {
+	query := `SELECT ` + shipmentColumns + ` FROM logistics.shipment WHERE order_id = $1 AND deleted_at IS NULL LIMIT 16`
+	rows, err := s.pool.Query(ctx, query, orderID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query shipments by order: %w", err)
+	}
+	defer rows.Close()
+	var out []Shipment
+	for rows.Next() {
+		var sh Shipment
+		if err := scanShipment(rows, &sh); err != nil {
+			return nil, fmt.Errorf("failed to scan shipment: %w", err)
+		}
+		out = append(out, sh)
+	}
+	return out, rows.Err()
+}
+
 func (s *PostgresStorage) GetShipmentByID(ctx context.Context, id string) (Shipment, error) {
 	query := `SELECT ` + shipmentColumns + ` FROM logistics.shipment WHERE id = $1 AND deleted_at IS NULL`
 	var sh Shipment
@@ -337,6 +355,17 @@ func (s *PostgresStorage) UpdateCurrentLocation(ctx context.Context, id, city, h
 }
 
 func (s *PostgresStorage) RecordDelivery(ctx context.Context, id, signature, photoURL string) (Shipment, error) {
+	existing, err := s.GetShipmentByID(ctx, id)
+	if err != nil {
+		return Shipment{}, err
+	}
+	if existing.Status == "delivered" {
+		return Shipment{}, ErrShipmentAlreadyDelivered
+	}
+	if isTerminalStatus(existing.Status) {
+		return Shipment{}, fmt.Errorf("cannot record delivery for shipment in terminal status %q: %w",
+			existing.Status, ErrShipmentTerminalState)
+	}
 	now := time.Now().UTC()
 	query := `
 		UPDATE logistics.shipment
@@ -354,7 +383,23 @@ func (s *PostgresStorage) RecordDelivery(ctx context.Context, id, signature, pho
 	return out, nil
 }
 
+func isTerminalStatus(status Status) bool {
+	switch string(status) {
+	case "delivered", "returned_to_sender", "returned", "cancelled":
+		return true
+	}
+	return false
+}
+
 func (s *PostgresStorage) RecordDeliveryAttempt(ctx context.Context, a DeliveryAttempt) (DeliveryAttempt, error) {
+	existing, err := s.GetShipmentByID(ctx, a.ShipmentID)
+	if err != nil {
+		return DeliveryAttempt{}, err
+	}
+	if isTerminalStatus(existing.Status) {
+		return DeliveryAttempt{}, fmt.Errorf("cannot record attempt for shipment in terminal status %q: %w",
+			existing.Status, ErrShipmentTerminalState)
+	}
 	if a.OccurredAt.IsZero() {
 		a.OccurredAt = time.Now().UTC()
 	}
@@ -422,10 +467,15 @@ func (s *PostgresStorage) GetDeliveryAttempts(ctx context.Context, shipmentID st
 }
 
 func (s *PostgresStorage) RedirectAddress(ctx context.Context, id string, newAddress Address, reason string) (Shipment, error) {
-	addrJSON, _ := json.Marshal(newAddress)
+	existing, err := s.GetShipmentByID(ctx, id)
+	if err != nil {
+		return Shipment{}, err
+	}
+	merged := mergeAddressFromStruct(existing.Recipient, newAddress)
+	addrJSON, _ := json.Marshal(merged)
 	now := time.Now().UTC()
 	flatAddress := strings.Join([]string{
-		newAddress.Street, newAddress.City, newAddress.Country, newAddress.Postcode,
+		merged.Street, merged.City, merged.Country, merged.Postcode,
 	}, ", ")
 	query := `
 		UPDATE logistics.shipment
@@ -575,4 +625,115 @@ func mapShipmentSortField(field string) string {
 	default:
 		return "created_at"
 	}
+}
+
+func mergeAddressFromStruct(existing Address, patch Address) Address {
+	if patch.FullName != "" {
+		existing.FullName = patch.FullName
+	}
+	if patch.Phone != "" {
+		existing.Phone = patch.Phone
+	}
+	if patch.Email != "" {
+		existing.Email = patch.Email
+	}
+	if patch.Company != "" {
+		existing.Company = patch.Company
+	}
+	if patch.Street != "" {
+		existing.Street = patch.Street
+	}
+	if patch.City != "" {
+		existing.City = patch.City
+	}
+	if patch.Region != "" {
+		existing.Region = patch.Region
+	}
+	if patch.Postcode != "" {
+		existing.Postcode = patch.Postcode
+	}
+	if patch.Country != "" {
+		existing.Country = patch.Country
+	}
+	if patch.DeliveryNotes != "" {
+		existing.DeliveryNotes = patch.DeliveryNotes
+	}
+	return existing
+}
+
+func (s *PostgresStorage) InTransitSummary(ctx context.Context) (InTransitSummaryResult, error) {
+	const activeStatusesSQL = `('in_transit','at_hub','out_for_delivery','picked_up','delivery_attempted','held_at_office','awaiting_pickup','label_created','created')`
+
+	res := InTransitSummaryResult{}
+
+	if err := s.pool.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM logistics.shipment
+		WHERE deleted_at IS NULL AND status IN `+activeStatusesSQL).Scan(&res.Total); err != nil {
+		return res, fmt.Errorf("failed to count in-transit: %w", err)
+	}
+
+	rowsByStatus, err := s.pool.Query(ctx, `
+		SELECT status, COUNT(*) FROM logistics.shipment
+		WHERE deleted_at IS NULL AND status IN `+activeStatusesSQL+`
+		GROUP BY status ORDER BY status`)
+	if err != nil {
+		return res, fmt.Errorf("failed to group by status: %w", err)
+	}
+	defer rowsByStatus.Close()
+	for rowsByStatus.Next() {
+		var b StatusBucket
+		if err := rowsByStatus.Scan(&b.Status, &b.Count); err != nil {
+			return res, err
+		}
+		res.ByStatus = append(res.ByStatus, b)
+	}
+
+	rowsByCarrier, err := s.pool.Query(ctx, `
+		SELECT s.carrier_id::text, COALESCE(c.name, ''), COUNT(*)
+		FROM logistics.shipment s
+		LEFT JOIN logistics.carrier c ON c.id = s.carrier_id
+		WHERE s.deleted_at IS NULL AND s.status IN `+activeStatusesSQL+`
+		GROUP BY s.carrier_id, c.name
+		ORDER BY COUNT(*) DESC
+		LIMIT 20`)
+	if err != nil {
+		return res, fmt.Errorf("failed to group by carrier: %w", err)
+	}
+	defer rowsByCarrier.Close()
+	for rowsByCarrier.Next() {
+		var b CarrierBucket
+		if err := rowsByCarrier.Scan(&b.CarrierID, &b.CarrierName, &b.Count); err != nil {
+			return res, err
+		}
+		res.ByCarrier = append(res.ByCarrier, b)
+	}
+
+	rowsByHub, err := s.pool.Query(ctx, `
+		SELECT COALESCE(current_location_hub, ''), COUNT(*)
+		FROM logistics.shipment
+		WHERE deleted_at IS NULL AND status IN `+activeStatusesSQL+`
+		GROUP BY current_location_hub
+		ORDER BY COUNT(*) DESC
+		LIMIT 20`)
+	if err != nil {
+		return res, fmt.Errorf("failed to group by hub: %w", err)
+	}
+	defer rowsByHub.Close()
+	for rowsByHub.Next() {
+		var b HubBucket
+		if err := rowsByHub.Scan(&b.Hub, &b.Count); err != nil {
+			return res, err
+		}
+		res.ByHub = append(res.ByHub, b)
+	}
+
+	if err := s.pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM logistics.shipment
+		WHERE deleted_at IS NULL AND status IN `+activeStatusesSQL+`
+		  AND estimated_delivery_at::date = CURRENT_DATE`).Scan(&res.EstimatedToDeliverToday); err != nil {
+		return res, fmt.Errorf("failed to count today: %w", err)
+	}
+
+	return res, nil
 }

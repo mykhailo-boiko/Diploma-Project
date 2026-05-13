@@ -26,8 +26,8 @@ func TestOrderController_Create_Success(t *testing.T) {
 	body, _ := json.Marshal(CreateOrderRequest{
 		CustomerName: "John Doe",
 		Items: []CreateItemInput{
-			{ProductID: "prod-1", Name: "Widget", Quantity: 2, UnitPrice: 10.50},
-			{ProductID: "prod-2", Name: "Gadget", Quantity: 1, UnitPrice: 25.00},
+			{ProductID: "11111111-1111-1111-1111-111111111111", Name: "Widget", Quantity: 2, UnitPrice: 10.50},
+			{ProductID: "22222222-2222-2222-2222-222222222222", Name: "Gadget", Quantity: 1, UnitPrice: 25.00},
 		},
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/orders", bytes.NewReader(body))
@@ -52,7 +52,7 @@ func TestOrderController_Create_MissingCustomerName(t *testing.T) {
 	ctrl, _ := setupOrderController()
 
 	body, _ := json.Marshal(CreateOrderRequest{
-		Items: []CreateItemInput{{ProductID: "p1", Name: "Item", Quantity: 1, UnitPrice: 5.00}},
+		Items: []CreateItemInput{{ProductID: "11111111-2222-3333-4444-555555555555", Name: "Item", Quantity: 1, UnitPrice: 5.00}},
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/orders", bytes.NewReader(body))
 	rec := httptest.NewRecorder()
@@ -83,7 +83,7 @@ func TestOrderController_Create_InvalidItem(t *testing.T) {
 
 	body, _ := json.Marshal(CreateOrderRequest{
 		CustomerName: "John",
-		Items:        []CreateItemInput{{ProductID: "p1", Name: "", Quantity: 0, UnitPrice: 0}},
+		Items:        []CreateItemInput{{ProductID: "11111111-2222-3333-4444-555555555555", Name: "", Quantity: 0, UnitPrice: 0}},
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/orders", bytes.NewReader(body))
 	rec := httptest.NewRecorder()
@@ -98,8 +98,8 @@ func TestOrderController_Create_InvalidItem(t *testing.T) {
 func TestOrderController_GetByID_NotFound(t *testing.T) {
 	ctrl, _ := setupOrderController()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/orders/nonexistent", nil)
-	req.SetPathValue("id", "nonexistent")
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/orders/99999999-9999-9999-9999-999999999999", nil)
+	req.SetPathValue("id", "99999999-9999-9999-9999-999999999999")
 	rec := httptest.NewRecorder()
 
 	ctrl.GetByID(rec, req)
@@ -114,7 +114,7 @@ func TestOrderController_GetByID_Success(t *testing.T) {
 
 	created, err := svc.CreateOrder(t.Context(), CreateOrderRequest{
 		CustomerName: "Test User",
-		Items:        []CreateItemInput{{ProductID: "p1", Name: "Item", Quantity: 1, UnitPrice: 10.00}},
+		Items:        []CreateItemInput{{ProductID: "11111111-2222-3333-4444-555555555555", Name: "Item", Quantity: 1, UnitPrice: 10.00}},
 	})
 	if err != nil {
 		t.Fatalf("CreateOrder failed: %v", err)
@@ -136,7 +136,7 @@ func TestOrderController_List_Success(t *testing.T) {
 
 	_, err := svc.CreateOrder(t.Context(), CreateOrderRequest{
 		CustomerName: "Test",
-		Items:        []CreateItemInput{{ProductID: "p1", Name: "Item", Quantity: 1, UnitPrice: 5.00}},
+		Items:        []CreateItemInput{{ProductID: "11111111-2222-3333-4444-555555555555", Name: "Item", Quantity: 1, UnitPrice: 5.00}},
 	})
 	if err != nil {
 		t.Fatalf("CreateOrder failed: %v", err)
@@ -165,7 +165,7 @@ func TestOrderController_UpdateStatus_Success(t *testing.T) {
 
 	created, err := svc.CreateOrder(t.Context(), CreateOrderRequest{
 		CustomerName: "Test",
-		Items:        []CreateItemInput{{ProductID: "p1", Name: "Item", Quantity: 1, UnitPrice: 10.00}},
+		Items:        []CreateItemInput{{ProductID: "11111111-2222-3333-4444-555555555555", Name: "Item", Quantity: 1, UnitPrice: 10.00}},
 	})
 	if err != nil {
 		t.Fatalf("CreateOrder failed: %v", err)
@@ -188,7 +188,7 @@ func TestOrderController_UpdateStatus_InvalidTransition(t *testing.T) {
 
 	created, err := svc.CreateOrder(t.Context(), CreateOrderRequest{
 		CustomerName: "Test",
-		Items:        []CreateItemInput{{ProductID: "p1", Name: "Item", Quantity: 1, UnitPrice: 10.00}},
+		Items:        []CreateItemInput{{ProductID: "11111111-2222-3333-4444-555555555555", Name: "Item", Quantity: 1, UnitPrice: 10.00}},
 	})
 	if err != nil {
 		t.Fatalf("CreateOrder failed: %v", err)
@@ -239,7 +239,7 @@ func TestOrderController_Cancel_Success(t *testing.T) {
 
 	created, err := svc.CreateOrder(t.Context(), CreateOrderRequest{
 		CustomerName: "Test Cancel",
-		Items:        []CreateItemInput{{ProductID: "p1", Name: "Item", Quantity: 1, UnitPrice: 10.00}},
+		Items:        []CreateItemInput{{ProductID: "11111111-2222-3333-4444-555555555555", Name: "Item", Quantity: 1, UnitPrice: 10.00}},
 	})
 	if err != nil {
 		t.Fatalf("CreateOrder failed: %v", err)
@@ -262,7 +262,7 @@ func TestOrderController_Cancel_MissingReason(t *testing.T) {
 
 	created, err := svc.CreateOrder(t.Context(), CreateOrderRequest{
 		CustomerName: "Test",
-		Items:        []CreateItemInput{{ProductID: "p1", Name: "Item", Quantity: 1, UnitPrice: 10.00}},
+		Items:        []CreateItemInput{{ProductID: "11111111-2222-3333-4444-555555555555", Name: "Item", Quantity: 1, UnitPrice: 10.00}},
 	})
 	if err != nil {
 		t.Fatalf("CreateOrder failed: %v", err)
@@ -300,7 +300,7 @@ func TestOrderController_Search_Success(t *testing.T) {
 
 	_, err := svc.CreateOrder(t.Context(), CreateOrderRequest{
 		CustomerName: "John Smith",
-		Items:        []CreateItemInput{{ProductID: "p1", Name: "Item", Quantity: 1, UnitPrice: 10.00}},
+		Items:        []CreateItemInput{{ProductID: "11111111-2222-3333-4444-555555555555", Name: "Item", Quantity: 1, UnitPrice: 10.00}},
 	})
 	if err != nil {
 		t.Fatalf("CreateOrder failed: %v", err)
@@ -334,7 +334,7 @@ func TestOrderController_Stats_Success(t *testing.T) {
 
 	_, err := svc.CreateOrder(t.Context(), CreateOrderRequest{
 		CustomerName: "Test",
-		Items:        []CreateItemInput{{ProductID: "p1", Name: "Item", Quantity: 1, UnitPrice: 10.00}},
+		Items:        []CreateItemInput{{ProductID: "11111111-2222-3333-4444-555555555555", Name: "Item", Quantity: 1, UnitPrice: 10.00}},
 	})
 	if err != nil {
 		t.Fatalf("CreateOrder failed: %v", err)

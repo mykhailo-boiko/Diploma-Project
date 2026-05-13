@@ -103,7 +103,7 @@ func TestAuthController_Register_Success(t *testing.T) {
 	ctrl, _ := setupAuthController()
 
 	body, _ := json.Marshal(RegisterRequest{
-		Email: "new@example.com", Password: "pass123", FirstName: "New", LastName: "User", Role: user.RoleOperator,
+		Email: "new@example.com", Password: "Pass1234", FirstName: "New", LastName: "User", Role: user.RoleOperator,
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewReader(body))
 	req = req.WithContext(middleware.WithUserContext(req.Context(), "", "admin"))

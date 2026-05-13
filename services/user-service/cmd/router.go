@@ -34,6 +34,7 @@ func newRouter(authCtrl *controller.AuthController, userCtrl *controller.UserCon
 
 	mux.HandleFunc("GET /api/v1/users", userCtrl.ListUsers)
 	mux.HandleFunc("POST /api/v1/users", userCtrl.CreateUser)
+	mux.HandleFunc("GET /api/v1/users/{id}", userCtrl.GetUserByID)
 	mux.HandleFunc("PUT /api/v1/users/{id}", userCtrl.UpdateUser)
 	mux.HandleFunc("DELETE /api/v1/users/{id}", userCtrl.DeleteUser)
 

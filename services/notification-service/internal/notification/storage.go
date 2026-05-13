@@ -233,8 +233,22 @@ func buildWhereClause(filter Filter) (string, []any) {
 		conditions = append(conditions, fmt.Sprintf("type = $%d", len(args)))
 	}
 	if filter.Status != nil {
-		args = append(args, string(*filter.Status))
-		conditions = append(conditions, fmt.Sprintf("status = $%d", len(args)))
+		switch string(*filter.Status) {
+		case "unread":
+			conditions = append(conditions, "status != 'read'")
+		case "read":
+			conditions = append(conditions, "status = 'read'")
+		default:
+			args = append(args, string(*filter.Status))
+			conditions = append(conditions, fmt.Sprintf("status = $%d", len(args)))
+		}
+	}
+	if filter.IsRead != nil {
+		if *filter.IsRead {
+			conditions = append(conditions, "status = 'read'")
+		} else {
+			conditions = append(conditions, "status != 'read'")
+		}
 	}
 
 	if len(conditions) == 0 {

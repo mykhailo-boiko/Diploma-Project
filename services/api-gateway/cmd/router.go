@@ -90,6 +90,8 @@ func newRouter(cfg config, hub *realtime.Hub, log *zap.Logger) (http.Handler, er
 	mux.Handle("/api/v1/tracking/", logisticsProxy)
 	mux.Handle("/api/v1/public/tracking/", logisticsProxy)
 
+	mux.Handle("GET /api/v1/analytics/audit-log", adminOnly(analyticsProxy))
+	mux.Handle("GET /api/v1/analytics/trace/by-entity", adminOnly(analyticsProxy))
 	mux.Handle("/api/v1/analytics/", analyticsProxy)
 
 	mux.Handle("/api/v1/notifications/", notificationProxy)
@@ -101,7 +103,9 @@ func newRouter(cfg config, hub *realtime.Hub, log *zap.Logger) (http.Handler, er
 		mux.HandleFunc("GET /api/v1/events/stream", hub.Handle)
 	} else {
 		mux.HandleFunc("GET /api/v1/events/stream", func(w http.ResponseWriter, _ *http.Request) {
-			http.Error(w, `{"error":"realtime disabled"}`, http.StatusServiceUnavailable)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"error":"realtime disabled (no NATS URL configured)"}`))
 		})
 	}
 
@@ -110,6 +114,8 @@ func newRouter(cfg config, hub *realtime.Hub, log *zap.Logger) (http.Handler, er
 		"/api/v1/auth/refresh",
 		"/api/v1/auth/password-reset",
 		"/api/v1/public/",
+		"/metrics",
+		"/health",
 	}
 
 	metrics := middleware.NewMetrics("api_gateway")
@@ -118,6 +124,7 @@ func newRouter(cfg config, hub *realtime.Hub, log *zap.Logger) (http.Handler, er
 	handler = jwtMW.Middleware(skipPrefixes)(handler)
 	handler = limiter.Middleware(handler)
 	handler = metrics.Middleware(handler)
+	handler = middleware.BodySize(middleware.DefaultMaxBodyBytes)(handler)
 	handler = middleware.Logging(log.Named("http"))(handler)
 	handler = middleware.Recovery(log.Named("recovery"))(handler)
 	handler = middleware.CORS(corsConfig)(handler)

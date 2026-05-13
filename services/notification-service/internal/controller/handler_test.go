@@ -215,6 +215,7 @@ func TestNotificationController_MarkAsRead_Success(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/notifications/"+created.ID+"/read", nil)
 	req.SetPathValue("id", created.ID)
+	req = req.WithContext(middleware.WithUserContext(req.Context(), "user-1", "operator"))
 	rec := httptest.NewRecorder()
 
 	ctrl.MarkAsRead(rec, req)

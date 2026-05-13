@@ -34,8 +34,8 @@ func TestPageFromRequest_ExceedsMax(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/items?limit=5000", nil)
 	page := PageFromRequest(r)
 
-	if page.Limit != defaultLimit {
-		t.Errorf("expected limit %d for exceeding max (%d), got %d", defaultLimit, maxLimit, page.Limit)
+	if page.Limit != maxLimit {
+		t.Errorf("expected limit capped to %d for exceeding max, got %d", maxLimit, page.Limit)
 	}
 }
 

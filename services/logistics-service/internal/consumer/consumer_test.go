@@ -22,9 +22,29 @@ func (m *mockShipmentCreator) CreateShipment(_ context.Context, req controller.C
 	return shipment.Shipment{ID: "sh-1", OrderID: req.OrderID, Status: shipment.StatusCreated}, nil
 }
 
+type mockShipmentLookup struct {
+	byOrder map[string][]shipment.Shipment
+}
+
+func (m *mockShipmentLookup) FindByOrderID(_ context.Context, orderID string) ([]shipment.Shipment, error) {
+	if m.byOrder == nil {
+		return nil, nil
+	}
+	return m.byOrder[orderID], nil
+}
+
 func newTestConsumer() (*Consumer, *mockShipmentCreator) {
 	svc := &mockShipmentCreator{}
-	return &Consumer{svc: svc, log: zap.NewNop()}, svc
+	lookup := &mockShipmentLookup{byOrder: map[string][]shipment.Shipment{}}
+	return &Consumer{svc: svc, lookup: lookup, log: zap.NewNop()}, svc
+}
+
+func newTestConsumerWithExisting(orderID string) (*Consumer, *mockShipmentCreator) {
+	svc := &mockShipmentCreator{}
+	lookup := &mockShipmentLookup{byOrder: map[string][]shipment.Shipment{
+		orderID: {{ID: "preexisting-1", OrderID: orderID}},
+	}}
+	return &Consumer{svc: svc, lookup: lookup, log: zap.NewNop()}, svc
 }
 
 func makeEvent(eventType string, data any) natspkg.Event {
@@ -72,5 +92,22 @@ func TestHandleOrderStatusChanged_NotConfirmed(t *testing.T) {
 
 	if len(svc.created) != 0 {
 		t.Errorf("expected no shipment creation for non-confirmed status, got %d", len(svc.created))
+	}
+}
+
+func TestHandleOrderStatusChanged_IdempotentSkipExisting(t *testing.T) {
+	c, svc := newTestConsumerWithExisting("o1")
+
+	ev := makeEvent("order.status_changed", map[string]any{
+		"order_id":   "o1",
+		"new_status": "confirmed",
+	})
+
+	if err := c.handleOrderStatusChanged(ev); err != nil {
+		t.Fatalf("handleOrderStatusChanged failed: %v", err)
+	}
+
+	if len(svc.created) != 0 {
+		t.Errorf("expected no duplicate shipment creation when one already exists, got %d", len(svc.created))
 	}
 }

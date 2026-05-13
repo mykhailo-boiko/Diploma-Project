@@ -6,17 +6,14 @@ import jwt
 
 from config import JWT_ALGORITHM, JWT_SECRET
 
-
 @dataclass(frozen=True)
 class UserClaims:
     user_id: str
     email: str
     role: str
 
-
 class AuthError(Exception):
     pass
-
 
 def validate_token(token: str) -> UserClaims:
     try:
