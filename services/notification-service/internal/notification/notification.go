@@ -43,6 +43,7 @@ type Filter struct {
 	UserID *string
 	Type   *Type
 	Status *Status
+	IsRead *bool
 }
 
 type UserUnreadCount struct {

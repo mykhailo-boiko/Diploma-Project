@@ -43,6 +43,7 @@ type LogisticsService interface {
 	HoldForPickup(ctx context.Context, id, officeAddress, reason string) (shipment.Shipment, error)
 	RecordAttempt(ctx context.Context, id, reason, notes string, nextAttemptAt *time.Time) (shipment.DeliveryAttempt, error)
 	RecordDelivery(ctx context.Context, id, signature, photoURL string) (shipment.Shipment, error)
+	InTransitSummary(ctx context.Context) (shipment.InTransitSummaryResult, error)
 }
 
 type LogisticsController struct {
@@ -621,6 +622,13 @@ func (c *LogisticsController) Reschedule(w http.ResponseWriter, r *http.Request)
 		httpresponse.BadRequest(w, "validation_error", "new_eta must be RFC3339")
 		return
 	}
+	if t.Before(time.Now().UTC()) {
+		httpresponse.InvalidField(w, "new_eta",
+			"future RFC3339 datetime", req.NewETA,
+			"new_eta must be in the future. Use a date after current UTC time.",
+			"2026-06-01T10:00:00Z")
+		return
+	}
 	updated, err := c.svc.Reschedule(r.Context(), id, t, req.Reason)
 	if err != nil {
 		httpresponse.BadRequest(w, "validation_error", err.Error())
@@ -691,6 +699,11 @@ func (c *LogisticsController) RecordAttempt(w http.ResponseWriter, r *http.Reque
 	}
 	attempt, err := c.svc.RecordAttempt(r.Context(), id, req.Reason, req.Notes, nextAt)
 	if err != nil {
+		if errors.Is(err, shipment.ErrShipmentTerminalState) {
+			httpresponse.Err(w, http.StatusConflict, "terminal_state",
+				err.Error())
+			return
+		}
 		httpresponse.BadRequest(w, "validation_error", err.Error())
 		return
 	}
@@ -700,6 +713,7 @@ func (c *LogisticsController) RecordAttempt(w http.ResponseWriter, r *http.Reque
 func (c *LogisticsController) RecordDelivery(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	var req struct {
+		Signature     string `json:"signature"`
 		SignatureName string `json:"signature_name"`
 		PhotoURL      string `json:"photo_url"`
 	}
@@ -707,12 +721,41 @@ func (c *LogisticsController) RecordDelivery(w http.ResponseWriter, r *http.Requ
 		httpresponse.BadRequest(w, "invalid_request", "invalid body")
 		return
 	}
-	updated, err := c.svc.RecordDelivery(r.Context(), id, req.SignatureName, req.PhotoURL)
+	signature := req.Signature
+	if signature == "" {
+		signature = req.SignatureName
+	}
+	if signature == "" && req.PhotoURL == "" {
+		httpresponse.MissingField(w, "signature_or_photo_url",
+			"either 'signature' (recipient name) or 'photo_url' is required",
+			"Provide at least one delivery proof: a printed signature name or a photo URL.",
+			"John Doe", "https://cdn.example.com/proof.jpg")
+		return
+	}
+	updated, err := c.svc.RecordDelivery(r.Context(), id, signature, req.PhotoURL)
 	if err != nil {
+		if errors.Is(err, shipment.ErrShipmentAlreadyDelivered) {
+			httpresponse.Err(w, http.StatusConflict, "already_delivered", err.Error())
+			return
+		}
+		if errors.Is(err, shipment.ErrShipmentTerminalState) {
+			httpresponse.Err(w, http.StatusConflict, "terminal_state", err.Error())
+			return
+		}
 		httpresponse.BadRequest(w, "validation_error", err.Error())
 		return
 	}
 	httpresponse.OK(w, updated)
+}
+
+func (c *LogisticsController) InTransitSummary(w http.ResponseWriter, r *http.Request) {
+	summary, err := c.svc.InTransitSummary(r.Context())
+	if err != nil {
+		c.log.Error("Failed to get in-transit summary", zap.Error(err))
+		httpresponse.InternalError(w, "internal_error", "internal server error")
+		return
+	}
+	httpresponse.OK(w, summary)
 }
 
 func parseShipmentFilter(r *http.Request) shipment.Filter {

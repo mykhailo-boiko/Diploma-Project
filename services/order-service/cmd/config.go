@@ -7,15 +7,17 @@ import (
 )
 
 type config struct {
-	Listen   string
-	Postgres postgres.Config
-	NatsURL  string
+	Listen           string
+	Postgres         postgres.Config
+	NatsURL          string
+	InventoryService string
 }
 
 func loadConfig() config {
 	return config{
-		Listen:  envOrDefault("LISTEN", ":8002"),
-		NatsURL: envOrDefault("NATS_URL", "nats://localhost:4222"),
+		Listen:           envOrDefault("LISTEN", ":8002"),
+		NatsURL:          envOrDefault("NATS_URL", "nats://localhost:4222"),
+		InventoryService: envOrDefault("INVENTORY_SERVICE_URL", "http://inventory-service:8003"),
 		Postgres: postgres.Config{
 			Host:     envOrDefault("POSTGRES_HOST", "localhost"),
 			Port:     envInt("POSTGRES_PORT", 5432),

@@ -141,7 +141,42 @@ type CustomerFilter struct {
 var (
 	ErrOrderNotFound     = errors.New("order not found")
 	ErrInvalidTransition = errors.New("invalid status transition")
+	ErrProductNotFound   = errors.New("product not found")
 )
+
+type InvalidTransitionError struct {
+	Current   string
+	Requested string
+}
+
+func (e *InvalidTransitionError) Error() string {
+	return "cannot transition order from '" + e.Current + "' to '" + e.Requested + "'"
+}
+
+func (e *InvalidTransitionError) Is(target error) bool {
+	return target == ErrInvalidTransition
+}
+
+func IsValidStatus(s Status) bool {
+	switch s {
+	case StatusPending, StatusConfirmed, StatusProcessing, StatusShipped,
+		StatusDelivered, StatusCompleted, StatusCancelled, StatusReturned:
+		return true
+	}
+	return false
+}
+
+func AllStatuses() []string {
+	return []string{
+		string(StatusPending), string(StatusConfirmed), string(StatusProcessing),
+		string(StatusShipped), string(StatusDelivered), string(StatusCompleted),
+		string(StatusCancelled), string(StatusReturned),
+	}
+}
+
+type ProductValidator interface {
+	ValidateProduct(ctx context.Context, productID string) error
+}
 
 type Storage interface {
 	CreateOrder(ctx context.Context, o Order) (Order, error)

@@ -189,7 +189,7 @@ class MCPClient:
         if self._session is None:
             return {"error": "MCP session not connected"}
 
-        _ = trace_id  # propagated for telemetry only; stdio MCP does not forward headers
+        _ = trace_id
 
         if self._redis is not None and _is_cacheable(name):
             cached = await self._cache_get(name, arguments)

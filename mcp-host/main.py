@@ -8,11 +8,12 @@ from typing import Any
 
 import redis.asyncio as aioredis
 import uvicorn
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
-from auth import AuthError, validate_token
+from auth import AuthError, UserClaims, validate_token
 from budget import SessionBudget
 from config import HOST, PORT, REDIS_URL
 from context_store import ContextStore
@@ -70,6 +71,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.get("/metrics")
+async def metrics() -> Response:
+
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
 @app.get("/health")
 async def health() -> JSONResponse:
 
@@ -82,10 +88,26 @@ async def health() -> JSONResponse:
         "redis": "ok" if redis_ok else "disconnected",
     })
 
-@app.get("/api/v1/mcp/budget/{session_id}")
-async def get_budget(session_id: str, user_id: str | None = None) -> JSONResponse:
+async def _require_jwt(request: Request) -> UserClaims:
 
-    status = await _budget.get_status(session_id, user_id)
+    header = request.headers.get("authorization") or ""
+    if not header.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="missing or malformed Authorization header")
+    token = header.split(" ", 1)[1].strip()
+    try:
+        return validate_token(token)
+    except AuthError as exc:
+        raise HTTPException(status_code=401, detail=str(exc))
+
+@app.get("/api/v1/mcp/budget/{session_id}")
+async def get_budget(
+    session_id: str,
+    user_id: str | None = None,
+    claims: UserClaims = Depends(_require_jwt),
+) -> JSONResponse:
+
+    effective_user_id = user_id or claims.user_id
+    status = await _budget.get_status(session_id, effective_user_id)
     return JSONResponse({
         "session_used": status.session_used,
         "session_cap": status.session_cap,
@@ -95,7 +117,10 @@ async def get_budget(session_id: str, user_id: str | None = None) -> JSONRespons
     })
 
 @app.get("/api/v1/mcp/plans/{session_id}")
-async def list_plans(session_id: str) -> JSONResponse:
+async def list_plans(
+    session_id: str,
+    claims: UserClaims = Depends(_require_jwt),
+) -> JSONResponse:
 
     if _plan_store is None:
         return JSONResponse({"error": "plan store not available"}, status_code=503)

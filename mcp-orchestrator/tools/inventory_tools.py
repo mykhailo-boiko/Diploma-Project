@@ -171,15 +171,15 @@ def register(mcp: FastMCP) -> None:
     async def stock_low() -> dict[str, Any]:
         return await api_get("/api/v1/stock/low")
 
-    @mcp.tool(description="Update minimum stock threshold for a (product, warehouse) pair. Args: product_id: Product UUID. warehouse_id: Warehouse UUID. threshold: New min threshold (0 = disabled).")
+    @mcp.tool(description="Update minimum stock threshold for a (product, warehouse) pair. Args: product_id: Product UUID. warehouse_id: Warehouse UUID. min_threshold: New min threshold (0 = disabled).")
     async def stock_threshold_update(
         product_id: UUIDStr,
         warehouse_id: UUIDStr,
-        threshold: NonNegativeInt,
+        min_threshold: NonNegativeInt,
     ) -> dict[str, Any]:
         return await api_put("/api/v1/stock/threshold", {
             "product_id": product_id, "warehouse_id": warehouse_id,
-            "threshold": threshold,
+            "min_threshold": min_threshold,
         })
 
     @mcp.tool(description="Comprehensive inventory report with totals by warehouse and category.")

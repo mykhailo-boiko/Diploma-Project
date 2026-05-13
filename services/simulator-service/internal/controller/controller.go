@@ -2,7 +2,9 @@ package controller
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"strings"
 
 	"go.uber.org/zap"
 
@@ -33,13 +35,27 @@ func (c *Controller) Start(w http.ResponseWriter, r *http.Request) {
 	if r.Body != nil {
 		_ = json.NewDecoder(r.Body).Decode(&req)
 	}
+	if req.Scenario != "" && !state.IsValidScenario(req.Scenario) {
+		httpresponse.InvalidField(w, "scenario",
+			"one of: "+strings.Join(state.AllowedScenarios(), ", "), req.Scenario,
+			"Use one of the allowed scenarios.",
+			"steady", "holiday_spike", "carrier_failure", "demand_surge", "idle")
+		return
+	}
 	scenario := state.ParseScenario(req.Scenario)
 	if req.Scenario == "" {
 		scenario = c.state.Scenario()
 	}
 	speed := req.Speed
-	if speed <= 0 {
+	if speed == 0 {
 		speed = c.state.Speed()
+	}
+	if speed < state.MinSpeed || speed > state.MaxSpeed {
+		httpresponse.InvalidField(w, "speed",
+			fmt.Sprintf("number between %.1f and %.1f", state.MinSpeed, state.MaxSpeed), speed,
+			"Speed must be within the allowed range.",
+			"1", "5", "25", "50")
+		return
 	}
 	c.state.Start(scenario, speed)
 	c.log.Info("Simulator started", zap.String("scenario", string(scenario)), zap.Float64("speed", speed))
@@ -62,8 +78,11 @@ func (c *Controller) SetSpeed(w http.ResponseWriter, r *http.Request) {
 		httpresponse.BadRequest(w, "invalid_request", "invalid body")
 		return
 	}
-	if req.Speed <= 0 || req.Speed > 100 {
-		httpresponse.BadRequest(w, "validation_error", "speed must be between 0 and 100")
+	if req.Speed < state.MinSpeed || req.Speed > state.MaxSpeed {
+		httpresponse.InvalidField(w, "speed",
+			fmt.Sprintf("number between %.1f and %.1f", state.MinSpeed, state.MaxSpeed), req.Speed,
+			"Speed must be within the allowed range.",
+			"1", "5", "25", "50")
 		return
 	}
 	c.state.SetSpeed(req.Speed)
@@ -78,6 +97,13 @@ func (c *Controller) SetScenario(w http.ResponseWriter, r *http.Request) {
 	var req scenarioRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpresponse.BadRequest(w, "invalid_request", "invalid body")
+		return
+	}
+	if !state.IsValidScenario(req.Scenario) {
+		httpresponse.InvalidField(w, "scenario",
+			"one of: "+strings.Join(state.AllowedScenarios(), ", "), req.Scenario,
+			"Use one of the allowed scenarios.",
+			"steady", "holiday_spike", "carrier_failure", "demand_surge", "idle")
 		return
 	}
 	scenario := state.ParseScenario(req.Scenario)

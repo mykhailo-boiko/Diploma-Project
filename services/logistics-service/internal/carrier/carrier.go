@@ -41,7 +41,8 @@ type Filter struct {
 }
 
 var (
-	ErrCarrierNotFound = errors.New("carrier not found")
+	ErrCarrierNotFound      = errors.New("carrier not found")
+	ErrNoActiveCarrierFound = errors.New("no active carrier available")
 )
 
 type Storage interface {
@@ -49,4 +50,5 @@ type Storage interface {
 	GetCarrierByID(ctx context.Context, id string) (Carrier, error)
 	ListCarriers(ctx context.Context, filter Filter, sort pagination.Sort, page pagination.Page) ([]Carrier, int, error)
 	UpdateCarrier(ctx context.Context, c Carrier) (Carrier, error)
+	PickDefaultActive(ctx context.Context) (Carrier, error)
 }

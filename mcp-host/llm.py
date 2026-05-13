@@ -16,7 +16,7 @@ from observability import extract_entity_ids, logfire_span
 from mcp_client import MCPClient
 from models import ExecutionPlan
 from plan_store import PlanStore
-from rbac import filter_tools_by_role
+from rbac import filter_tools_by_role, is_tool_allowed
 
 logger = logging.getLogger(__name__)
 
@@ -428,11 +428,17 @@ async def chat_completion(
         await plan_store.save(plan)
 
     try:
+        if trace_id:
+            try:
+                await mcp.call_tool("_set_trace_context", {"trace_id": trace_id})
+            except Exception as exc:
+                logger.debug("set_trace_context failed: %s", exc)
         result_text = await _run_tool_loop(
             client, mcp, history, config, plan, plan_store, on_stream,
             session_id=session_id, user_id=user_id,
             trace_id=trace_id,
             budget=budget, loop_guard=loop_guard,
+            user_role=user_role,
         )
         return result_text, history
     finally:
@@ -496,6 +502,7 @@ async def _run_tool_loop(
     trace_id: str | None = None,
     budget: SessionBudget | None = None,
     loop_guard: LoopGuard | None = None,
+    user_role: str = "",
 ) -> str:
 
     for round_num in range(MAX_TOOL_ROUNDS):
@@ -598,6 +605,27 @@ async def _run_tool_loop(
                 plan.start_step(step)
                 if plan_store:
                     await plan_store.save(plan)
+
+            if user_role and not is_tool_allowed(tool_name, user_role):
+                logger.warning(
+                    "RBAC blocked tool call: role=%s tool=%s", user_role, tool_name,
+                )
+                result = {"error": {
+                    "code": "forbidden_tool",
+                    "message": f"Tool '{tool_name}' is not available for role '{user_role}'",
+                    "suggestion": "Choose a different tool that fits your role permissions.",
+                }}
+                if on_stream:
+                    await on_stream("tool_error", f"Tool '{tool_name}' blocked by RBAC")
+                if step and plan:
+                    plan.fail_step(step, result["error"]["message"])
+                    if plan_store:
+                        await plan_store.save(plan)
+                function_response_parts.append(types.Part(function_response=types.FunctionResponse(
+                    name=tool_name, response=result,
+                )))
+                failed_tools.append(tool_name)
+                continue
 
             loop_result = None
             if loop_guard and session_id:

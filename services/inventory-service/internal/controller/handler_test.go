@@ -13,6 +13,8 @@ import (
 	"github.com/haradrim/chainorchestra/services/inventory-service/internal/stock"
 )
 
+func intPtr(v int) *int { return &v }
+
 func setupController() (*InventoryController, *Service, *mockStockStorage) {
 	svc, _, _, ss := newTestService()
 	log := zap.NewNop()
@@ -100,8 +102,8 @@ func TestProductController_Create_DuplicateSKU(t *testing.T) {
 func TestProductController_GetByID_NotFound(t *testing.T) {
 	ctrl, _, _ := setupController()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/products/nonexistent", nil)
-	req.SetPathValue("id", "nonexistent")
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/products/99999999-9999-9999-9999-999999999999", nil)
+	req.SetPathValue("id", "99999999-9999-9999-9999-999999999999")
 	rec := httptest.NewRecorder()
 
 	ctrl.GetProduct(rec, req)
@@ -189,8 +191,8 @@ func TestProductController_Update_NotFound(t *testing.T) {
 	ctrl, _, _ := setupController()
 
 	body, _ := json.Marshal(UpdateProductRequest{Name: "Updated"})
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/products/nonexistent", bytes.NewReader(body))
-	req.SetPathValue("id", "nonexistent")
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/products/99999999-9999-9999-9999-999999999999", bytes.NewReader(body))
+	req.SetPathValue("id", "99999999-9999-9999-9999-999999999999")
 	rec := httptest.NewRecorder()
 
 	ctrl.UpdateProduct(rec, req)
@@ -225,8 +227,8 @@ func TestProductController_Delete_Success(t *testing.T) {
 func TestProductController_Delete_NotFound(t *testing.T) {
 	ctrl, _, _ := setupController()
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/products/nonexistent", nil)
-	req.SetPathValue("id", "nonexistent")
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/products/99999999-9999-9999-9999-999999999999", nil)
+	req.SetPathValue("id", "99999999-9999-9999-9999-999999999999")
 	rec := httptest.NewRecorder()
 
 	ctrl.DeleteProduct(rec, req)
@@ -271,7 +273,7 @@ func TestWarehouseController_GetByID_NotFound(t *testing.T) {
 	ctrl, _, _ := setupController()
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/warehouses/nonexistent", nil)
-	req.SetPathValue("id", "nonexistent")
+	req.SetPathValue("id", "99999999-9999-9999-9999-999999999999")
 	rec := httptest.NewRecorder()
 
 	ctrl.GetWarehouse(rec, req)
@@ -324,7 +326,7 @@ func TestWarehouseController_Update_NotFound(t *testing.T) {
 
 	body, _ := json.Marshal(UpdateWarehouseRequest{Name: "Updated"})
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/warehouses/nonexistent", bytes.NewReader(body))
-	req.SetPathValue("id", "nonexistent")
+	req.SetPathValue("id", "99999999-9999-9999-9999-999999999999")
 	rec := httptest.NewRecorder()
 
 	ctrl.UpdateWarehouse(rec, req)
@@ -588,7 +590,7 @@ func TestStockController_UpdateMinThreshold_Success(t *testing.T) {
 	body, _ := json.Marshal(UpdateMinThresholdRequest{
 		ProductID:   "prod-1",
 		WarehouseID: "wh-1",
-		Threshold:   50,
+		MinThreshold: intPtr(50),
 	})
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/stock/threshold", bytes.NewReader(body))
 	rec := httptest.NewRecorder()
@@ -603,7 +605,7 @@ func TestStockController_UpdateMinThreshold_Success(t *testing.T) {
 func TestStockController_UpdateMinThreshold_MissingFields(t *testing.T) {
 	ctrl, _, _ := setupController()
 
-	body, _ := json.Marshal(UpdateMinThresholdRequest{Threshold: 50})
+	body, _ := json.Marshal(UpdateMinThresholdRequest{MinThreshold: intPtr(50)})
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/stock/threshold", bytes.NewReader(body))
 	rec := httptest.NewRecorder()
 
@@ -618,9 +620,9 @@ func TestStockController_UpdateMinThreshold_Negative(t *testing.T) {
 	ctrl, _, _ := setupController()
 
 	body, _ := json.Marshal(UpdateMinThresholdRequest{
-		ProductID:   "prod-1",
-		WarehouseID: "wh-1",
-		Threshold:   -1,
+		ProductID:    "prod-1",
+		WarehouseID:  "wh-1",
+		MinThreshold: intPtr(-1),
 	})
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/stock/threshold", bytes.NewReader(body))
 	rec := httptest.NewRecorder()
@@ -638,7 +640,7 @@ func TestStockController_UpdateMinThreshold_NotFound(t *testing.T) {
 	body, _ := json.Marshal(UpdateMinThresholdRequest{
 		ProductID:   "nonexistent",
 		WarehouseID: "wh-1",
-		Threshold:   50,
+		MinThreshold: intPtr(50),
 	})
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/stock/threshold", bytes.NewReader(body))
 	rec := httptest.NewRecorder()

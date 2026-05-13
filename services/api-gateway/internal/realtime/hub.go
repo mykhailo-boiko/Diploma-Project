@@ -27,19 +27,29 @@ func (s *subscriber) shutdown() {
 }
 
 type Hub struct {
-	nc  *nats.Conn
 	log *zap.Logger
 
 	mu   sync.RWMutex
 	subs map[string]*subscriber
 
 	subjects []string
+
+	ncMu     sync.RWMutex
+	nc       *nats.Conn
 	subs2    []*nats.Subscription
+	attached bool
 }
 
 func NewHub(nc *nats.Conn, log *zap.Logger) *Hub {
+	h := NewLazyHub(log)
+	if nc != nil {
+		_ = h.Attach(nc)
+	}
+	return h
+}
+
+func NewLazyHub(log *zap.Logger) *Hub {
 	return &Hub{
-		nc:   nc,
 		log:  log,
 		subs: make(map[string]*subscriber),
 		subjects: []string{
@@ -61,20 +71,40 @@ func NewHub(nc *nats.Conn, log *zap.Logger) *Hub {
 	}
 }
 
-func (h *Hub) Start() error {
-	if h.nc == nil {
-		return fmt.Errorf("nats connection not configured")
+func (h *Hub) Attach(nc *nats.Conn) error {
+	if nc == nil {
+		return fmt.Errorf("nats connection is nil")
 	}
+	h.ncMu.Lock()
+	defer h.ncMu.Unlock()
+	if h.attached {
+		return nil
+	}
+	h.nc = nc
 	for _, subj := range h.subjects {
-		s, err := h.nc.Subscribe(subj, h.onMessage(subj))
+		s, err := nc.Subscribe(subj, h.onMessage(subj))
 		if err != nil {
 			h.log.Error("Failed to subscribe", zap.String("subject", subj), zap.Error(err))
 			continue
 		}
 		h.subs2 = append(h.subs2, s)
 	}
-	h.log.Info("Realtime hub subscribed", zap.Int("subjects", len(h.subs2)))
+	h.attached = true
+	h.log.Info("Realtime hub attached to NATS", zap.Int("subjects", len(h.subs2)))
 	return nil
+}
+
+func (h *Hub) IsAttached() bool {
+	h.ncMu.RLock()
+	defer h.ncMu.RUnlock()
+	return h.attached
+}
+
+func (h *Hub) Start() error {
+	if h.IsAttached() {
+		return nil
+	}
+	return fmt.Errorf("nats connection not configured")
 }
 
 func (h *Hub) Stop() {
@@ -138,6 +168,13 @@ func (h *Hub) Handle(w http.ResponseWriter, r *http.Request) {
 	userID := r.Header.Get("X-User-ID")
 	if userID == "" {
 		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
+	if !h.IsAttached() {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"error":"realtime initializing","retry_after_seconds":5}`))
 		return
 	}
 

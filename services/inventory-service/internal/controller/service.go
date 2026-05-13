@@ -155,12 +155,24 @@ type AdjustStockRequest struct {
 	Quantity    int    `json:"quantity"`
 	Type        string `json:"type"`
 	Reference   string `json:"reference"`
+	Reason      string `json:"reason"`
 }
 
 type UpdateMinThresholdRequest struct {
-	ProductID   string `json:"product_id"`
-	WarehouseID string `json:"warehouse_id"`
-	Threshold   int    `json:"threshold"`
+	ProductID    string `json:"product_id"`
+	WarehouseID  string `json:"warehouse_id"`
+	MinThreshold *int   `json:"min_threshold,omitempty"`
+	Threshold    *int   `json:"threshold,omitempty"`
+}
+
+func (r UpdateMinThresholdRequest) ResolvedThreshold() (int, bool) {
+	if r.MinThreshold != nil {
+		return *r.MinThreshold, true
+	}
+	if r.Threshold != nil {
+		return *r.Threshold, true
+	}
+	return 0, false
 }
 
 func (s *Service) ListStock(ctx context.Context, filter stock.Filter, sort pagination.Sort, page pagination.Page) ([]stock.Stock, int, error) {
@@ -191,7 +203,11 @@ func (s *Service) ReleaseStock(ctx context.Context, req ReleaseStockRequest) (st
 }
 
 func (s *Service) AdjustStock(ctx context.Context, req AdjustStockRequest) (stock.Stock, error) {
-	st, err := s.stocks.AdjustStock(ctx, req.ProductID, req.WarehouseID, req.Quantity, req.Type, req.Reference)
+	ref := req.Reference
+	if ref == "" {
+		ref = req.Reason
+	}
+	st, err := s.stocks.AdjustStock(ctx, req.ProductID, req.WarehouseID, req.Quantity, req.Type, ref)
 	if err != nil {
 		return stock.Stock{}, fmt.Errorf("failed to adjust stock: %w", err)
 	}
@@ -215,7 +231,11 @@ func (s *Service) GetInventoryReport(ctx context.Context) (stock.InventoryReport
 }
 
 func (s *Service) UpdateMinThreshold(ctx context.Context, req UpdateMinThresholdRequest) (stock.Stock, error) {
-	st, err := s.stocks.UpdateMinThreshold(ctx, req.ProductID, req.WarehouseID, req.Threshold)
+	value, ok := req.ResolvedThreshold()
+	if !ok {
+		return stock.Stock{}, fmt.Errorf("missing min_threshold field")
+	}
+	st, err := s.stocks.UpdateMinThreshold(ctx, req.ProductID, req.WarehouseID, value)
 	if err != nil {
 		return stock.Stock{}, fmt.Errorf("failed to update min_threshold: %w", err)
 	}

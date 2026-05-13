@@ -90,6 +90,11 @@ func (c *AuthController) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := ValidatePassword(req.Password); err != nil {
+		httpresponse.BadRequest(w, "weak_password", err.Error())
+		return
+	}
+
 	if !user.ValidRoles[req.Role] {
 		httpresponse.BadRequest(w, "invalid_role", "invalid role")
 		return

@@ -30,12 +30,12 @@ func (m *mockStorage) CreateOrder(_ context.Context, o order.Order) (order.Order
 	defer m.mu.Unlock()
 
 	m.nextID++
-	o.ID = fmt.Sprintf("order-%d", m.nextID)
+	o.ID = fmt.Sprintf("00000000-0000-0000-0000-%012d", m.nextID)
 	o.Status = order.StatusPending
 
 	var total float64
 	for i := range o.Items {
-		o.Items[i].ID = fmt.Sprintf("item-%d-%d", m.nextID, i)
+		o.Items[i].ID = fmt.Sprintf("11111111-0000-0000-0000-%010d%02d", m.nextID, i)
 		o.Items[i].OrderID = o.ID
 		o.Items[i].Subtotal = float64(o.Items[i].Quantity) * o.Items[i].UnitPrice
 		total += o.Items[i].Subtotal
@@ -188,7 +188,7 @@ func TestGetOrderByID(t *testing.T) {
 
 	created, err := svc.CreateOrder(t.Context(), CreateOrderRequest{
 		CustomerName: "Jane Doe",
-		Items:        []CreateItemInput{{ProductID: "p1", Name: "Item", Quantity: 1, UnitPrice: 5.00}},
+		Items:        []CreateItemInput{{ProductID: "11111111-2222-3333-4444-555555555555", Name: "Item", Quantity: 1, UnitPrice: 5.00}},
 	})
 	if err != nil {
 		t.Fatalf("CreateOrder failed: %v", err)
@@ -218,7 +218,7 @@ func TestUpdateOrderStatus_ValidTransition(t *testing.T) {
 
 	created, err := svc.CreateOrder(t.Context(), CreateOrderRequest{
 		CustomerName: "Test",
-		Items:        []CreateItemInput{{ProductID: "p1", Name: "Item", Quantity: 1, UnitPrice: 10.00}},
+		Items:        []CreateItemInput{{ProductID: "11111111-2222-3333-4444-555555555555", Name: "Item", Quantity: 1, UnitPrice: 10.00}},
 	})
 	if err != nil {
 		t.Fatalf("CreateOrder failed: %v", err)
@@ -239,7 +239,7 @@ func TestUpdateOrderStatus_InvalidTransition(t *testing.T) {
 
 	created, err := svc.CreateOrder(t.Context(), CreateOrderRequest{
 		CustomerName: "Test",
-		Items:        []CreateItemInput{{ProductID: "p1", Name: "Item", Quantity: 1, UnitPrice: 10.00}},
+		Items:        []CreateItemInput{{ProductID: "11111111-2222-3333-4444-555555555555", Name: "Item", Quantity: 1, UnitPrice: 10.00}},
 	})
 	if err != nil {
 		t.Fatalf("CreateOrder failed: %v", err)
@@ -257,7 +257,7 @@ func TestListOrders(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		_, err := svc.CreateOrder(t.Context(), CreateOrderRequest{
 			CustomerName: fmt.Sprintf("Customer %d", i),
-			Items:        []CreateItemInput{{ProductID: "p1", Name: "Item", Quantity: 1, UnitPrice: 10.00}},
+			Items:        []CreateItemInput{{ProductID: "11111111-2222-3333-4444-555555555555", Name: "Item", Quantity: 1, UnitPrice: 10.00}},
 		})
 		if err != nil {
 			t.Fatalf("CreateOrder failed: %v", err)
@@ -282,7 +282,7 @@ func TestCancelOrder(t *testing.T) {
 
 	created, err := svc.CreateOrder(t.Context(), CreateOrderRequest{
 		CustomerName: "Test Cancel",
-		Items:        []CreateItemInput{{ProductID: "p1", Name: "Item", Quantity: 1, UnitPrice: 10.00}},
+		Items:        []CreateItemInput{{ProductID: "11111111-2222-3333-4444-555555555555", Name: "Item", Quantity: 1, UnitPrice: 10.00}},
 	})
 	if err != nil {
 		t.Fatalf("CreateOrder failed: %v", err)
@@ -306,7 +306,7 @@ func TestCancelOrder_InvalidTransition(t *testing.T) {
 
 	created, err := svc.CreateOrder(t.Context(), CreateOrderRequest{
 		CustomerName: "Test",
-		Items:        []CreateItemInput{{ProductID: "p1", Name: "Item", Quantity: 1, UnitPrice: 10.00}},
+		Items:        []CreateItemInput{{ProductID: "11111111-2222-3333-4444-555555555555", Name: "Item", Quantity: 1, UnitPrice: 10.00}},
 	})
 	if err != nil {
 		t.Fatalf("CreateOrder failed: %v", err)
@@ -338,7 +338,7 @@ func TestSearchOrders(t *testing.T) {
 
 	_, err := svc.CreateOrder(t.Context(), CreateOrderRequest{
 		CustomerName: "John Smith",
-		Items:        []CreateItemInput{{ProductID: "p1", Name: "Item", Quantity: 1, UnitPrice: 10.00}},
+		Items:        []CreateItemInput{{ProductID: "11111111-2222-3333-4444-555555555555", Name: "Item", Quantity: 1, UnitPrice: 10.00}},
 	})
 	if err != nil {
 		t.Fatalf("CreateOrder failed: %v", err)
@@ -390,7 +390,7 @@ func TestGetOrderStats(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		_, err := svc.CreateOrder(t.Context(), CreateOrderRequest{
 			CustomerName: fmt.Sprintf("Customer %d", i),
-			Items:        []CreateItemInput{{ProductID: "p1", Name: "Item", Quantity: 1, UnitPrice: 10.00}},
+			Items:        []CreateItemInput{{ProductID: "11111111-2222-3333-4444-555555555555", Name: "Item", Quantity: 1, UnitPrice: 10.00}},
 		})
 		if err != nil {
 			t.Fatalf("CreateOrder failed: %v", err)
@@ -442,7 +442,7 @@ func TestFullWorkflow(t *testing.T) {
 
 	created, err := svc.CreateOrder(t.Context(), CreateOrderRequest{
 		CustomerName: "Workflow Test",
-		Items:        []CreateItemInput{{ProductID: "p1", Name: "Item", Quantity: 1, UnitPrice: 100.00}},
+		Items:        []CreateItemInput{{ProductID: "11111111-2222-3333-4444-555555555555", Name: "Item", Quantity: 1, UnitPrice: 100.00}},
 	})
 	if err != nil {
 		t.Fatalf("CreateOrder failed: %v", err)
@@ -473,7 +473,7 @@ func TestShippedToReturned(t *testing.T) {
 
 	created, err := svc.CreateOrder(t.Context(), CreateOrderRequest{
 		CustomerName: "Return Test",
-		Items:        []CreateItemInput{{ProductID: "p1", Name: "Item", Quantity: 1, UnitPrice: 50.00}},
+		Items:        []CreateItemInput{{ProductID: "11111111-2222-3333-4444-555555555555", Name: "Item", Quantity: 1, UnitPrice: 50.00}},
 	})
 	if err != nil {
 		t.Fatalf("CreateOrder failed: %v", err)

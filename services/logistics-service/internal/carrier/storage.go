@@ -105,6 +105,27 @@ func (s *PostgresStorage) ListCarriers(ctx context.Context, filter Filter, sort 
 	return carriers, total, nil
 }
 
+func (s *PostgresStorage) PickDefaultActive(ctx context.Context) (Carrier, error) {
+	query := `
+		SELECT id, name, type, cost_per_km, is_active, created_at, updated_at
+		FROM logistics.carrier
+		WHERE is_active = true
+		ORDER BY random()
+		LIMIT 1`
+
+	var c Carrier
+	err := s.pool.QueryRow(ctx, query).Scan(
+		&c.ID, &c.Name, &c.Type, &c.CostPerKm, &c.IsActive, &c.CreatedAt, &c.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Carrier{}, ErrNoActiveCarrierFound
+		}
+		return Carrier{}, fmt.Errorf("failed to pick default carrier: %w", err)
+	}
+	return c, nil
+}
+
 func (s *PostgresStorage) UpdateCarrier(ctx context.Context, c Carrier) (Carrier, error) {
 	query := `
 		UPDATE logistics.carrier

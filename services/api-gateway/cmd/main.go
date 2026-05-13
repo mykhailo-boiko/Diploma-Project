@@ -25,23 +25,42 @@ func main() {
 
 	cfg := loadConfig()
 
-	var nc *nats.Conn
-	var hub *realtime.Hub
+	bootCtx, bootCancel := context.WithCancel(context.Background())
+	defer bootCancel()
+
+	var ncRef *nats.Conn
+	hub := realtime.NewLazyHub(log.Named("realtime"))
 	if cfg.NatsURL != "" {
-		nc, err = nats.Connect(cfg.NatsURL,
-			nats.Name("api-gateway"),
-			nats.MaxReconnects(-1),
-			nats.ReconnectWait(2*time.Second),
-		)
-		if err != nil {
-			log.Warn("NATS connect failed; realtime stream disabled", zap.Error(err))
-		} else {
-			hub = realtime.NewHub(nc, log.Named("realtime"))
-			if err := hub.Start(); err != nil {
-				log.Warn("Realtime hub start failed", zap.Error(err))
-				hub = nil
+		go func() {
+			attempt := 0
+			for {
+				attempt++
+				nc, err := nats.Connect(cfg.NatsURL,
+					nats.Name("api-gateway"),
+					nats.MaxReconnects(-1),
+					nats.ReconnectWait(2*time.Second),
+				)
+				if err == nil {
+					ncRef = nc
+					if attachErr := hub.Attach(nc); attachErr != nil {
+						log.Error("Hub attach failed", zap.Error(attachErr))
+						nc.Close()
+					} else {
+						log.Info("Realtime hub online", zap.Int("attempts", attempt))
+						return
+					}
+				} else {
+					log.Warn("NATS connect retry", zap.Int("attempt", attempt), zap.Error(err))
+				}
+				select {
+				case <-bootCtx.Done():
+					return
+				case <-time.After(5 * time.Second):
+				}
 			}
-		}
+		}()
+	} else {
+		log.Warn("NATS URL not configured; realtime stream permanently disabled")
 	}
 
 	router, err := newRouter(cfg, hub, log)
@@ -73,11 +92,12 @@ func main() {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
 
+	bootCancel()
 	if hub != nil {
 		hub.Stop()
 	}
-	if nc != nil {
-		nc.Close()
+	if ncRef != nil {
+		ncRef.Close()
 	}
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Error("HTTP server shutdown error", zap.Error(err))

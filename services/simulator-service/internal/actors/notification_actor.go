@@ -62,9 +62,9 @@ func (a *NotificationActor) Tick(ctx context.Context) error {
 		message  string
 		priority string
 	}{
-		{"system_alert", "System health check", "All services responded within SLA.", "low"},
+		{"system", "System health check", "All services responded within SLA.", "low"},
 		{"info", "Daily ops summary", "Pipeline throughput is on baseline; no escalations.", "low"},
-		{"low_stock_alert", "Watchlist update", fmt.Sprintf("%d SKUs need replenishment review", 5+a.rng.Intn(20)), "medium"},
+		{"low_stock", "Watchlist update", fmt.Sprintf("%d SKUs need replenishment review", 5+a.rng.Intn(20)), "medium"},
 		{"analytics_anomaly", "AOV variation", "Average order value drifted slightly versus 30d baseline.", "medium"},
 		{"shipment_update", "Carrier digest", "On-time rate aligned with this week's benchmark.", "low"},
 	}

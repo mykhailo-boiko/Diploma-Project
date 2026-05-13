@@ -87,6 +87,18 @@ type PerformanceStats struct {
 }
 
 func (s *Service) CreateShipment(ctx context.Context, req CreateShipmentRequest) (shipment.Shipment, error) {
+	if req.CarrierID == "" {
+		picked, err := s.carriers.PickDefaultActive(ctx)
+		if err != nil {
+			return shipment.Shipment{}, fmt.Errorf("failed to pick default carrier: %w", err)
+		}
+		req.CarrierID = picked.ID
+		s.log.Info("Auto-selected default carrier for shipment",
+			zap.String("carrier_id", picked.ID),
+			zap.String("carrier_name", picked.Name),
+			zap.String("order_id", req.OrderID),
+		)
+	}
 	if _, err := s.carriers.GetCarrierByID(ctx, req.CarrierID); err != nil {
 		return shipment.Shipment{}, fmt.Errorf("failed to verify carrier: %w", err)
 	}
@@ -734,4 +746,8 @@ func (s *Service) publishShipmentMilestone(sh shipment.Shipment, milestone strin
 			zap.String("shipment_id", sh.ID),
 			zap.Error(err))
 	}
+}
+
+func (s *Service) InTransitSummary(ctx context.Context) (shipment.InTransitSummaryResult, error) {
+	return s.shipments.InTransitSummary(ctx)
 }

@@ -53,6 +53,8 @@ func main() {
 
 	storage := order.NewPostgresStorage(pool)
 	svc := controller.NewService(storage, nc, auditLogger, log.Named("service"))
+	productVal := controller.NewHTTPProductValidator(cfg.InventoryService, log.Named("product-validator"))
+	svc.SetProductValidator(productVal)
 	orderCtrl := controller.NewOrderController(svc, log.Named("controller"))
 	router := newRouter(orderCtrl, nc)
 

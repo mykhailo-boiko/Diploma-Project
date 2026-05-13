@@ -25,6 +25,29 @@ func ParseScenario(s string) Scenario {
 	}
 }
 
+func IsValidScenario(s string) bool {
+	switch Scenario(s) {
+	case ScenarioIdle, ScenarioSteady, ScenarioHolidaySpike, ScenarioCarrierFailure, ScenarioDemandSurge:
+		return true
+	}
+	return false
+}
+
+func AllowedScenarios() []string {
+	return []string{
+		string(ScenarioIdle),
+		string(ScenarioSteady),
+		string(ScenarioHolidaySpike),
+		string(ScenarioCarrierFailure),
+		string(ScenarioDemandSurge),
+	}
+}
+
+const (
+	MinSpeed = 0.1
+	MaxSpeed = 50.0
+)
+
 type ActorCounters struct {
 	OrdersCreated     atomic.Int64
 	OrdersProgressed  atomic.Int64

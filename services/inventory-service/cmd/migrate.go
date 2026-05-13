@@ -89,6 +89,14 @@ var migrations = []struct {
 			CREATE INDEX IF NOT EXISTS idx_stock_movement_type ON inventory.stock_movement (type);
 		`,
 	},
+	{
+		version: "000006_stock_invariant_reserved_le_quantity",
+		sql: `
+			UPDATE inventory.stock SET reserved = quantity WHERE reserved > quantity;
+			ALTER TABLE inventory.stock DROP CONSTRAINT IF EXISTS chk_reserved_le_quantity;
+			ALTER TABLE inventory.stock ADD CONSTRAINT chk_reserved_le_quantity CHECK (reserved >= 0 AND reserved <= quantity);
+		`,
+	},
 }
 
 func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {

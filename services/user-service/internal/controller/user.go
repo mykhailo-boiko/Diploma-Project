@@ -104,6 +104,31 @@ func (c *UserController) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	httpresponse.OK(w, updated)
 }
 
+func (c *UserController) GetUserByID(w http.ResponseWriter, r *http.Request) {
+	targetID := r.PathValue("id")
+	if targetID == "" {
+		httpresponse.BadRequest(w, "validation_error", "user id is required")
+		return
+	}
+	callerID := middleware.GetUserID(r.Context())
+	callerRole := middleware.GetUserRole(r.Context())
+	if callerRole != string(user.RoleAdmin) && callerID != targetID {
+		httpresponse.Forbidden(w, "forbidden", "cannot view another user's profile")
+		return
+	}
+	u, err := c.svc.GetProfile(r.Context(), targetID)
+	if err != nil {
+		if errors.Is(err, user.ErrUserNotFound) {
+			httpresponse.NotFound(w, "user_not_found", "user not found")
+			return
+		}
+		c.log.Error("Failed to get user", zap.Error(err))
+		httpresponse.InternalError(w, "internal_error", "internal server error")
+		return
+	}
+	httpresponse.OK(w, u)
+}
+
 func (c *UserController) ListUsers(w http.ResponseWriter, r *http.Request) {
 	if !c.requireAdmin(w, r) {
 		return

@@ -129,9 +129,35 @@ type Filter struct {
 }
 
 var (
-	ErrShipmentNotFound  = errors.New("shipment not found")
-	ErrInvalidTransition = errors.New("invalid status transition")
+	ErrShipmentNotFound         = errors.New("shipment not found")
+	ErrInvalidTransition        = errors.New("invalid status transition")
+	ErrShipmentAlreadyDelivered = errors.New("shipment already delivered")
+	ErrShipmentTerminalState    = errors.New("shipment is in terminal state")
 )
+
+type StatusBucket struct {
+	Status string `json:"status"`
+	Count  int    `json:"count"`
+}
+
+type CarrierBucket struct {
+	CarrierID   string `json:"carrier_id"`
+	CarrierName string `json:"carrier_name"`
+	Count       int    `json:"count"`
+}
+
+type HubBucket struct {
+	Hub   string `json:"hub"`
+	Count int    `json:"count"`
+}
+
+type InTransitSummaryResult struct {
+	Total                   int             `json:"total"`
+	ByStatus                []StatusBucket  `json:"by_status"`
+	ByCarrier               []CarrierBucket `json:"by_carrier"`
+	ByHub                   []HubBucket     `json:"by_hub"`
+	EstimatedToDeliverToday int             `json:"estimated_to_deliver_today"`
+}
 
 type ReassignResult struct {
 	Total           int      `json:"total"`
@@ -175,4 +201,5 @@ type Storage interface {
 	RecordDeliveryAttempt(ctx context.Context, attempt DeliveryAttempt) (DeliveryAttempt, error)
 	GetDeliveryAttempts(ctx context.Context, shipmentID string) ([]DeliveryAttempt, error)
 	RedirectAddress(ctx context.Context, id string, newAddress Address, reason string) (Shipment, error)
+	InTransitSummary(ctx context.Context) (InTransitSummaryResult, error)
 }

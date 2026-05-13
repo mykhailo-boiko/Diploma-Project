@@ -8,13 +8,27 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 
 	"github.com/haradrim/chainorchestra/internal/pkg/httpresponse"
 	"github.com/haradrim/chainorchestra/internal/pkg/pagination"
 	"github.com/haradrim/chainorchestra/services/order-service/internal/order"
 )
+
+func isLatinName(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r > unicode.MaxASCII {
+			return false
+		}
+	}
+	return true
+}
 
 type OrderService interface {
 	CreateOrder(ctx context.Context, req CreateOrderRequest) (order.Order, error)
@@ -59,6 +73,13 @@ func (c *OrderController) Create(w http.ResponseWriter, r *http.Request) {
 			"Yuliia Morozenko", "John Doe")
 		return
 	}
+	if !isLatinName(req.CustomerName) {
+		httpresponse.InvalidField(w, "customer_name",
+			"Latin-script characters only (ASCII)", req.CustomerName,
+			"Use Latin transliteration. Cyrillic, Hebrew, Arabic, CJK and other non-ASCII characters are not accepted.",
+			"Yuliia Morozenko", "John Doe", "Ivan Petrenko")
+		return
+	}
 	if len(req.Items) == 0 {
 		httpresponse.MissingField(w, "items",
 			"non-empty array of order items",
@@ -66,21 +87,35 @@ func (c *OrderController) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for i, item := range req.Items {
+		field := "items[" + strconv.Itoa(i) + "]"
+		if item.ProductID == "" {
+			httpresponse.MissingField(w, field+".product_id",
+				"product UUID v4",
+				"Each item must reference an existing product. Use products_list/products_get to obtain a valid product_id.")
+			return
+		}
+		if _, err := uuid.Parse(item.ProductID); err != nil {
+			httpresponse.InvalidField(w, field+".product_id",
+				"valid UUID v4", item.ProductID,
+				"product_id must be a UUID. Use products_list/products_get to obtain a valid product_id.",
+				"9ebcaf0f-c50d-4f36-b417-c3fa7477fc8c")
+			return
+		}
 		if item.Name == "" {
-			httpresponse.MissingField(w, "items["+strconv.Itoa(i)+"].name",
+			httpresponse.MissingField(w, field+".name",
 				"non-empty product name string",
 				"Each item must include the product name.")
 			return
 		}
 		if item.Quantity <= 0 {
-			httpresponse.InvalidField(w, "items["+strconv.Itoa(i)+"].quantity",
+			httpresponse.InvalidField(w, field+".quantity",
 				"positive integer (> 0)", item.Quantity,
 				"Quantity must be greater than 0. Use 1 for a single unit.",
 				"1", "5", "10")
 			return
 		}
 		if item.UnitPrice <= 0 {
-			httpresponse.InvalidField(w, "items["+strconv.Itoa(i)+"].unit_price",
+			httpresponse.InvalidField(w, field+".unit_price",
 				"positive number (> 0)", item.UnitPrice,
 				"Unit price must be greater than 0. Use the product's unit_price from products_list/products_get.",
 				"19.99", "499.00")
@@ -90,6 +125,11 @@ func (c *OrderController) Create(w http.ResponseWriter, r *http.Request) {
 
 	created, err := c.svc.CreateOrder(r.Context(), req)
 	if err != nil {
+		if errors.Is(err, order.ErrProductNotFound) {
+			httpresponse.Err(w, http.StatusNotFound, "product_not_found",
+				"one or more product_id values do not exist in inventory")
+			return
+		}
 		c.log.Error("Failed to create order", zap.Error(err))
 		httpresponse.InternalError(w, "internal_error", "internal server error")
 		return
@@ -99,9 +139,8 @@ func (c *OrderController) Create(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *OrderController) GetByID(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	if id == "" {
-		httpresponse.BadRequest(w, "validation_error", "order id is required")
+	id, ok := httpresponse.ValidateUUIDPath(w, r, "id")
+	if !ok {
 		return
 	}
 
@@ -120,7 +159,10 @@ func (c *OrderController) GetByID(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *OrderController) List(w http.ResponseWriter, r *http.Request) {
-	filter := parseFilter(r)
+	filter, ok := parseFilterStrict(w, r)
+	if !ok {
+		return
+	}
 	sort := pagination.SortFromRequest(r, allowedSortFields, "created_at")
 	page := pagination.PageFromRequest(r)
 
@@ -172,8 +214,14 @@ func (c *OrderController) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
+		var transitionErr *order.InvalidTransitionError
+		if errors.As(err, &transitionErr) {
+			httpresponse.InvalidTransition(w, "order", transitionErr.Current, transitionErr.Requested,
+				[]string{"pending→confirmed", "confirmed→processing", "processing→shipped", "shipped→delivered", "delivered→completed", "* →cancelled (from non-terminal)"})
+			return
+		}
 		if errors.Is(err, order.ErrInvalidTransition) {
-			httpresponse.InvalidTransition(w, "order", "(see order's current status)", string(req.Status),
+			httpresponse.InvalidTransition(w, "order", "unknown", string(req.Status),
 				[]string{"pending→confirmed", "confirmed→processing", "processing→shipped", "shipped→delivered", "delivered→completed", "* →cancelled (from non-terminal)"})
 			return
 		}
@@ -462,4 +510,43 @@ func parseFilter(r *http.Request) order.Filter {
 	}
 
 	return filter
+}
+
+func parseFilterStrict(w http.ResponseWriter, r *http.Request) (order.Filter, bool) {
+	var filter order.Filter
+
+	if s := r.URL.Query().Get("status"); s != "" {
+		status := order.Status(s)
+		if !order.IsValidStatus(status) {
+			httpresponse.InvalidField(w, "status",
+				"one of: "+strings.Join(order.AllStatuses(), ", "), s,
+				"Use one of the allowed order statuses.",
+				order.AllStatuses()...)
+			return order.Filter{}, false
+		}
+		filter.Status = &status
+	}
+
+	from, fromSet, fromErr := httpresponse.ParseDateFromQuery(r, "date_from")
+	if fromErr != nil {
+		httpresponse.WriteDateParseError(w, fromErr.(*httpresponse.DateParseError))
+		return order.Filter{}, false
+	}
+	if fromSet {
+		filter.DateFrom = &from
+	}
+	to, toSet, toErr := httpresponse.ParseDateFromQuery(r, "date_to")
+	if toErr != nil {
+		httpresponse.WriteDateParseError(w, toErr.(*httpresponse.DateParseError))
+		return order.Filter{}, false
+	}
+	if toSet {
+		filter.DateTo = &to
+	}
+
+	if s := r.URL.Query().Get("customer_name"); s != "" {
+		filter.CustomerName = &s
+	}
+
+	return filter, true
 }

@@ -126,6 +126,13 @@ func (m *mockShipmentStorage) RedirectAddress(_ context.Context, id string, _ sh
 	return shipment.Shipment{ID: id}, nil
 }
 
+func (m *mockShipmentStorage) InTransitSummary(_ context.Context) (shipment.InTransitSummaryResult, error) {
+	return shipment.InTransitSummaryResult{
+		Total:    0,
+		ByStatus: []shipment.StatusBucket{},
+	}, nil
+}
+
 type mockCarrierStorage struct {
 	mu       sync.Mutex
 	carriers map[string]carrier.Carrier
@@ -178,6 +185,17 @@ func (m *mockCarrierStorage) UpdateCarrier(_ context.Context, c carrier.Carrier)
 	}
 	m.carriers[c.ID] = c
 	return c, nil
+}
+
+func (m *mockCarrierStorage) PickDefaultActive(_ context.Context) (carrier.Carrier, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, c := range m.carriers {
+		if c.IsActive {
+			return c, nil
+		}
+	}
+	return carrier.Carrier{}, carrier.ErrNoActiveCarrierFound
 }
 
 func newTestService() (*Service, *mockShipmentStorage, *mockCarrierStorage) {

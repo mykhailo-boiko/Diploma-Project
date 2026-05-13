@@ -41,8 +41,8 @@ services:
       dockerfile: services/user-service/Dockerfile
     container_name: chainorchestra-user-service
     restart: unless-stopped
-    ports:
-      - "${USER_SERVICE_PORT:-8001}:8001"
+    expose:
+      - "8001"
     environment:
       LISTEN: ":8001"
       POSTGRES_HOST: postgres
@@ -76,8 +76,8 @@ services:
       dockerfile: services/order-service/Dockerfile
     container_name: chainorchestra-order-service
     restart: unless-stopped
-    ports:
-      - "${ORDER_SERVICE_PORT:-8002}:8002"
+    expose:
+      - "8002"
     environment:
       LISTEN: ":8002"
       POSTGRES_HOST: postgres
@@ -106,8 +106,8 @@ services:
       dockerfile: services/inventory-service/Dockerfile
     container_name: chainorchestra-inventory-service
     restart: unless-stopped
-    ports:
-      - "${INVENTORY_SERVICE_PORT:-8003}:8003"
+    expose:
+      - "8003"
     environment:
       LISTEN: ":8003"
       POSTGRES_HOST: postgres
@@ -136,8 +136,8 @@ services:
       dockerfile: services/logistics-service/Dockerfile
     container_name: chainorchestra-logistics-service
     restart: unless-stopped
-    ports:
-      - "${LOGISTICS_SERVICE_PORT:-8004}:8004"
+    expose:
+      - "8004"
     environment:
       LISTEN: ":8004"
       POSTGRES_HOST: postgres
@@ -166,8 +166,8 @@ services:
       dockerfile: services/analytics-service/Dockerfile
     container_name: chainorchestra-analytics-service
     restart: unless-stopped
-    ports:
-      - "${ANALYTICS_SERVICE_PORT:-8005}:8005"
+    expose:
+      - "8005"
     environment:
       LISTEN: ":8005"
       POSTGRES_HOST: postgres
@@ -196,8 +196,8 @@ services:
       dockerfile: services/notification-service/Dockerfile
     container_name: chainorchestra-notification-service
     restart: unless-stopped
-    ports:
-      - "${NOTIFICATION_SERVICE_PORT:-8006}:8006"
+    expose:
+      - "8006"
     environment:
       LISTEN: ":8006"
       POSTGRES_HOST: postgres
@@ -226,8 +226,8 @@ services:
       dockerfile: services/simulator-service/Dockerfile
     container_name: chainorchestra-simulator-service
     restart: unless-stopped
-    ports:
-      - "${SIMULATOR_SERVICE_PORT:-8007}:8007"
+    expose:
+      - "8007"
     environment:
       LISTEN: ":8007"
       GATEWAY_URL: http://api-gateway:8080
@@ -360,11 +360,11 @@ services:
       api-gateway:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/ || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 30s
+      start_period: 40s
 
   prometheus:
     image: prom/prometheus:v3.4.1

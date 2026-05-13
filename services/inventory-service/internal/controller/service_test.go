@@ -36,7 +36,7 @@ func (m *mockProductStorage) CreateProduct(_ context.Context, p product.Product)
 	}
 
 	m.nextID++
-	p.ID = fmt.Sprintf("prod-%d", m.nextID)
+	p.ID = fmt.Sprintf("22222222-0000-0000-0000-%012d", m.nextID)
 	m.products[p.ID] = p
 	return p, nil
 }
@@ -105,7 +105,7 @@ func (m *mockWarehouseStorage) CreateWarehouse(_ context.Context, w warehouse.Wa
 	defer m.mu.Unlock()
 
 	m.nextID++
-	w.ID = fmt.Sprintf("wh-%d", m.nextID)
+	w.ID = fmt.Sprintf("33333333-0000-0000-0000-%012d", m.nextID)
 	w.IsActive = true
 	m.warehouses[w.ID] = w
 	return w, nil
@@ -823,7 +823,7 @@ func TestUpdateMinThreshold(t *testing.T) {
 	result, err := svc.UpdateMinThreshold(t.Context(), UpdateMinThresholdRequest{
 		ProductID:   "prod-1",
 		WarehouseID: "wh-1",
-		Threshold:   50,
+		MinThreshold: intPtr(50),
 	})
 	if err != nil {
 		t.Fatalf("UpdateMinThreshold failed: %v", err)
@@ -840,7 +840,7 @@ func TestUpdateMinThreshold_NotFound(t *testing.T) {
 	_, err := svc.UpdateMinThreshold(t.Context(), UpdateMinThresholdRequest{
 		ProductID:   "nonexistent",
 		WarehouseID: "wh-1",
-		Threshold:   50,
+		MinThreshold: intPtr(50),
 	})
 	if !errors.Is(err, stock.ErrStockNotFound) {
 		t.Errorf("expected ErrStockNotFound, got %v", err)
