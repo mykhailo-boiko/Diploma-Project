@@ -72,8 +72,9 @@ echo "=== H3: weak password rejected ==="
 code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$GW/api/v1/auth/register" -H "Authorization: Bearer $A" -H 'Content-Type: application/json' \
   -d '{"email":"weak.r@chainorchestra.local","password":"weak","first_name":"W","last_name":"W","role":"operator"}')
 assert "  weak password -> 400" "$code" "400"
+UNIQ=$(date +%s%N)
 code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$GW/api/v1/auth/register" -H "Authorization: Bearer $A" -H 'Content-Type: application/json' \
-  -d '{"email":"strong.r1@chainorchestra.local","password":"StrongPass1","first_name":"S","last_name":"S","role":"operator"}')
+  -d "{\"email\":\"strong.r$UNIQ@chainorchestra.local\",\"password\":\"StrongPass1\",\"first_name\":\"S\",\"last_name\":\"S\",\"role\":\"operator\"}")
 assert "  strong password -> 201" "$code" "201"
 
 echo ""
