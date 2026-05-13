@@ -26,8 +26,8 @@ func (c *Controller) Status(w http.ResponseWriter, _ *http.Request) {
 }
 
 type startRequest struct {
-	Scenario string  `json:"scenario"`
-	Speed    float64 `json:"speed"`
+	Scenario string   `json:"scenario"`
+	Speed    *float64 `json:"speed,omitempty"`
 }
 
 func (c *Controller) Start(w http.ResponseWriter, r *http.Request) {
@@ -46,16 +46,18 @@ func (c *Controller) Start(w http.ResponseWriter, r *http.Request) {
 	if req.Scenario == "" {
 		scenario = c.state.Scenario()
 	}
-	speed := req.Speed
-	if speed == 0 {
+	var speed float64
+	if req.Speed == nil {
 		speed = c.state.Speed()
-	}
-	if speed < state.MinSpeed || speed > state.MaxSpeed {
-		httpresponse.InvalidField(w, "speed",
-			fmt.Sprintf("number between %.1f and %.1f", state.MinSpeed, state.MaxSpeed), speed,
-			"Speed must be within the allowed range.",
-			"1", "5", "25", "50")
-		return
+	} else {
+		speed = *req.Speed
+		if speed < state.MinSpeed || speed > state.MaxSpeed {
+			httpresponse.InvalidField(w, "speed",
+				fmt.Sprintf("number between %.1f and %.1f", state.MinSpeed, state.MaxSpeed), speed,
+				"Speed must be within the allowed range. Omit the field to keep the current speed.",
+				"1", "5", "25", "50")
+			return
+		}
 	}
 	c.state.Start(scenario, speed)
 	c.log.Info("Simulator started", zap.String("scenario", string(scenario)), zap.Float64("speed", speed))

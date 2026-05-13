@@ -202,4 +202,5 @@ type Storage interface {
 	GetDeliveryAttempts(ctx context.Context, shipmentID string) ([]DeliveryAttempt, error)
 	RedirectAddress(ctx context.Context, id string, newAddress Address, reason string) (Shipment, error)
 	InTransitSummary(ctx context.Context) (InTransitSummaryResult, error)
+	FindByOrderID(ctx context.Context, orderID string) ([]Shipment, error)
 }

@@ -29,8 +29,10 @@ func (s Sort) Direction() string {
 
 func PageFromRequest(r *http.Request) Page {
 	limit := parseIntParam(r, "limit", defaultLimit)
-	if limit <= 0 || limit > maxLimit {
+	if limit <= 0 {
 		limit = defaultLimit
+	} else if limit > maxLimit {
+		limit = maxLimit
 	}
 
 	offset := parseIntParam(r, "offset", 0)

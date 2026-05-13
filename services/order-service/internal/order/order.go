@@ -139,9 +139,10 @@ type CustomerFilter struct {
 }
 
 var (
-	ErrOrderNotFound     = errors.New("order not found")
-	ErrInvalidTransition = errors.New("invalid status transition")
-	ErrProductNotFound   = errors.New("product not found")
+	ErrOrderNotFound          = errors.New("order not found")
+	ErrInvalidTransition      = errors.New("invalid status transition")
+	ErrProductNotFound        = errors.New("product not found")
+	ErrConcurrentStatusUpdate = errors.New("order status was modified concurrently; refresh and retry")
 )
 
 type InvalidTransitionError struct {
@@ -182,8 +183,8 @@ type Storage interface {
 	CreateOrder(ctx context.Context, o Order) (Order, error)
 	GetOrderByID(ctx context.Context, id string) (Order, error)
 	ListOrders(ctx context.Context, filter Filter, sort pagination.Sort, page pagination.Page) ([]Order, int, error)
-	UpdateOrderStatus(ctx context.Context, id string, status Status) (Order, error)
-	CancelOrder(ctx context.Context, id string, reason string) (Order, error)
+	UpdateOrderStatus(ctx context.Context, id string, expected, next Status) (Order, error)
+	CancelOrder(ctx context.Context, id string, expected Status, reason string) (Order, error)
 	SearchOrders(ctx context.Context, query string, page pagination.Page) ([]Order, int, error)
 	GetOrderStats(ctx context.Context) (OrderStats, error)
 	GetSalesByProduct(ctx context.Context, from, to time.Time, includeStatuses []Status) ([]ProductSales, error)

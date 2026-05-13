@@ -8,8 +8,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
-
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
@@ -18,16 +16,54 @@ import (
 	"github.com/haradrim/chainorchestra/services/order-service/internal/order"
 )
 
-func isLatinName(s string) bool {
+var customerNameAllowedRune = func(r rune) bool {
+	if r >= 'A' && r <= 'Z' {
+		return true
+	}
+	if r >= 'a' && r <= 'z' {
+		return true
+	}
+	if r >= 0x00C0 && r <= 0x00FF && r != 0x00D7 && r != 0x00F7 {
+		return true
+	}
+	if r >= 0x0100 && r <= 0x017F {
+		return true
+	}
+	if r >= 0x0180 && r <= 0x024F {
+		return true
+	}
+	if r == ' ' || r == '-' || r == '\'' || r == '.' {
+		return true
+	}
+	return false
+}
+
+func isValidCustomerName(s string) bool {
 	if s == "" {
 		return false
 	}
+	if len(s) > 200 {
+		return false
+	}
+	runeCount := 0
 	for _, r := range s {
-		if r > unicode.MaxASCII {
+		runeCount++
+		if !customerNameAllowedRune(r) {
 			return false
 		}
 	}
+	if runeCount < 2 || runeCount > 100 {
+		return false
+	}
+	first := []rune(s)[0]
+	if first == ' ' || first == '-' || first == '\'' || first == '.' {
+		return false
+	}
 	return true
+}
+
+func isLatinName(s string) bool {
+	return isValidCustomerName(s)
 }
 
 type OrderService interface {
@@ -225,6 +261,15 @@ func (c *OrderController) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 				[]string{"pending→confirmed", "confirmed→processing", "processing→shipped", "shipped→delivered", "delivered→completed", "* →cancelled (from non-terminal)"})
 			return
 		}
+		if errors.Is(err, order.ErrConcurrentStatusUpdate) {
+			httpresponse.ConflictError(w, httpresponse.LLMError{
+				Code:       "concurrent_update",
+				Message:    "order status was modified by another request; refresh and retry",
+				Field:      "status",
+				Suggestion: "Refetch order with orders_get and retry the transition based on its current status.",
+			})
+			return
+		}
 		c.log.Error("Failed to update order status", zap.Error(err))
 		httpresponse.InternalError(w, "internal_error", "internal server error")
 		return
@@ -273,6 +318,15 @@ func (c *OrderController) Cancel(w http.ResponseWriter, r *http.Request) {
 				Message:    "order cannot be cancelled in its current status (likely already delivered/completed/returned/cancelled)",
 				Field:      "status",
 				Suggestion: "Fetch the order with orders_get to see its current status. Terminal statuses (completed, returned, cancelled) cannot be cancelled.",
+			})
+			return
+		}
+		if errors.Is(err, order.ErrConcurrentStatusUpdate) {
+			httpresponse.ConflictError(w, httpresponse.LLMError{
+				Code:       "concurrent_update",
+				Message:    "order status was modified by another request; refresh and retry",
+				Field:      "status",
+				Suggestion: "Refetch order with orders_get and retry the cancel based on its current status.",
 			})
 			return
 		}

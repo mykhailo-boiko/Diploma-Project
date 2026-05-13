@@ -80,10 +80,10 @@ assert "  strong password -> 201" "$code" "201"
 echo ""
 echo "=== H4: order product_id FK + UUID ==="
 code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$GW/api/v1/orders" -H "Authorization: Bearer $A" -H 'Content-Type: application/json' \
-  -d '{"customer_name":"X","items":[{"product_id":"not-a-uuid","name":"X","quantity":1,"unit_price":1}]}')
+  -d '{"customer_name":"Test Customer","items":[{"product_id":"not-a-uuid","name":"X","quantity":1,"unit_price":1}]}')
 assert "  malformed product_id -> 400" "$code" "400"
 code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$GW/api/v1/orders" -H "Authorization: Bearer $A" -H 'Content-Type: application/json' \
-  -d '{"customer_name":"X","items":[{"product_id":"00000000-0000-0000-0000-000000000000","name":"X","quantity":1,"unit_price":1}]}')
+  -d '{"customer_name":"Test Customer","items":[{"product_id":"00000000-0000-0000-0000-000000000000","name":"X","quantity":1,"unit_price":1}]}')
 assert "  non-existent product_id -> 404" "$code" "404"
 
 echo ""
@@ -219,6 +219,75 @@ code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$GW/api/v1/analytics/repo
   -d '{"type":"sales","date_from":"2026-04-01","date_to":"2026-04-30"}')
 [[ "$code" == "200" || "$code" == "400" ]] && code=ACCEPTED || code="$code"
 assert "  type alias accepted (not validation_error on missing report_type)" "$code" "ACCEPTED"
+
+echo ""
+echo "=== A13 [audit-2]: forged JWT in frontend cookie -> redirect ==="
+FAKE='eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4Iiwicm9sZSI6ImFkbWluIn0.bogus'
+code=$(curl -s -o /dev/null -w "%{http_code}" -H "Cookie: access_token=$FAKE" http://localhost:3000/admin/simulator)
+assert "  forged JWT -> 307" "$code" "307"
+
+echo ""
+echo "=== A12 [audit-2]: order status race -> single shipment ==="
+PEND_RACE=$(curl -s -H "Authorization: Bearer $A" "$GW/api/v1/orders?status=pending&limit=1" | python3 -c "import sys,json;d=json.load(sys.stdin);print(d['data'][0]['id'] if d['data'] else '')")
+if [ -n "$PEND_RACE" ]; then
+  for i in 1 2 3 4 5; do
+    curl -s -X PUT "$GW/api/v1/orders/$PEND_RACE/status" -H "Authorization: Bearer $A" -H 'Content-Type: application/json' -d '{"status":"confirmed"}' -o /tmp/race_$i.txt -w "%{http_code}\n" > /tmp/race_code_$i.txt &
+  done
+  wait
+  OK_COUNT=$(grep -l "^200" /tmp/race_code_*.txt 2>/dev/null | wc -l | tr -d ' ')
+  CONFLICT_COUNT=$(grep -l "^409" /tmp/race_code_*.txt 2>/dev/null | wc -l | tr -d ' ')
+  assert "  exactly 1 transition succeeded" "$OK_COUNT" "1"
+  assert "  exactly 4 conflicts" "$CONFLICT_COUNT" "4"
+  sleep 4
+  SHIP_CNT=$(curl -s -H "Authorization: Bearer $A" "$GW/api/v1/shipments?order_id=$PEND_RACE" | python3 -c "import sys,json;d=json.load(sys.stdin);print(len(d.get('data',[])))")
+  assert "  exactly 1 shipment created" "$SHIP_CNT" "1"
+  rm -f /tmp/race_*.txt /tmp/race_code_*.txt
+fi
+
+echo ""
+echo "=== A3 [audit-2]: XSS in customer_name -> 400 ==="
+code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$GW/api/v1/orders" -H "Authorization: Bearer $A" -H 'Content-Type: application/json' \
+  -d '{"customer_name":"<script>alert(1)</script>","items":[{"product_id":"9ebcaf0f-c50d-4f36-b417-c3fa7477fc8c","name":"Suit","quantity":1,"unit_price":1}]}')
+assert "  <script> rejected" "$code" "400"
+
+echo ""
+echo "=== A9 [audit-2]: SQL string in customer_name -> 400 ==="
+code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$GW/api/v1/orders" -H "Authorization: Bearer $A" -H 'Content-Type: application/json' \
+  -d "{\"customer_name\":\"X'; DROP TABLE; --\",\"items\":[{\"product_id\":\"9ebcaf0f-c50d-4f36-b417-c3fa7477fc8c\",\"name\":\"Suit\",\"quantity\":1,\"unit_price\":1}]}")
+assert "  SQL string rejected" "$code" "400"
+
+echo ""
+echo "=== A10 [audit-2]: Latin diacritics accepted ==="
+code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$GW/api/v1/orders" -H "Authorization: Bearer $A" -H 'Content-Type: application/json' \
+  -d '{"customer_name":"Café Müller","items":[{"product_id":"9ebcaf0f-c50d-4f36-b417-c3fa7477fc8c","name":"Suit","quantity":1,"unit_price":1}]}')
+assert "  Café Müller accepted" "$code" "201"
+
+echo ""
+echo "=== A8 [audit-2]: oversized body -> 413 ==="
+python3 -c "print('A'*1500000)" > /tmp/big_body.txt
+code=$(curl -s --max-time 10 -o /dev/null -w "%{http_code}" -X POST "$GW/api/v1/orders" -H "Authorization: Bearer $A" -H 'Content-Type: application/json' --data-binary @/tmp/big_body.txt)
+assert "  1.5MB body -> 413" "$code" "413"
+rm -f /tmp/big_body.txt
+
+echo ""
+echo "=== A1 [audit-2]: Prometheus /-/reload enabled ==="
+code=$(curl -s -X POST -o /dev/null -w "%{http_code}" http://localhost:9090/-/reload)
+assert "  /-/reload -> 200" "$code" "200"
+
+echo ""
+echo "=== A7 [audit-2]: Simulator speed=0 rejected ==="
+code=$(curl -s -X POST "$GW/api/v1/simulator/start" -H "Authorization: Bearer $A" -H 'Content-Type: application/json' -d '{"scenario":"steady","speed":0}' -o /dev/null -w "%{http_code}")
+assert "  speed=0 -> 400" "$code" "400"
+
+echo ""
+echo "=== limit-cap [audit-2]: limit=5000 capped to 1000 ==="
+LIMIT=$(curl -s -H "Authorization: Bearer $A" "$GW/api/v1/orders?limit=5000" | python3 -c "import sys,json;print(json.load(sys.stdin)['meta']['limit'])")
+assert "  limit=5000 -> meta.limit=1000" "$LIMIT" "1000"
+
+echo ""
+echo "=== A5 [audit-2]: shipments have populated recipient ==="
+EMPTY=$(docker compose exec -T postgres psql -U postgres -d chainorchestra -tA -c "SELECT count(*) FROM logistics.shipment WHERE recipient::text='{}'" | tr -d ' ')
+assert "  zero empty recipients" "$EMPTY" "0"
 
 echo ""
 echo "=== Phase 6: SUMMARY ==="

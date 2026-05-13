@@ -34,10 +34,11 @@ func NewService(shipments shipment.Storage, carriers carrier.Storage, nc *natspk
 }
 
 type CreateShipmentRequest struct {
-	OrderID     string `json:"order_id"`
-	WarehouseID string `json:"warehouse_id"`
-	CarrierID   string `json:"carrier_id"`
-	Address     string `json:"address"`
+	OrderID       string `json:"order_id"`
+	WarehouseID   string `json:"warehouse_id"`
+	CarrierID     string `json:"carrier_id"`
+	Address       string `json:"address"`
+	RecipientName string `json:"recipient_name,omitempty"`
 }
 
 type UpdateShipmentStatusRequest struct {
@@ -108,6 +109,9 @@ func (s *Service) CreateShipment(ctx context.Context, req CreateShipmentRequest)
 		WarehouseID: req.WarehouseID,
 		CarrierID:   req.CarrierID,
 		Address:     req.Address,
+	}
+	if req.RecipientName != "" {
+		sh.Recipient = shipment.Address{FullName: req.RecipientName}
 	}
 
 	created, err := s.shipments.CreateShipment(ctx, sh)

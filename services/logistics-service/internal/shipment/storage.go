@@ -96,6 +96,24 @@ func (s *PostgresStorage) CreateShipment(ctx context.Context, sh Shipment) (Ship
 	return sh, nil
 }
 
+func (s *PostgresStorage) FindByOrderID(ctx context.Context, orderID string) ([]Shipment, error) {
+	query := `SELECT ` + shipmentColumns + ` FROM logistics.shipment WHERE order_id = $1 AND deleted_at IS NULL LIMIT 16`
+	rows, err := s.pool.Query(ctx, query, orderID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query shipments by order: %w", err)
+	}
+	defer rows.Close()
+	var out []Shipment
+	for rows.Next() {
+		var sh Shipment
+		if err := scanShipment(rows, &sh); err != nil {
+			return nil, fmt.Errorf("failed to scan shipment: %w", err)
+		}
+		out = append(out, sh)
+	}
+	return out, rows.Err()
+}
+
 func (s *PostgresStorage) GetShipmentByID(ctx context.Context, id string) (Shipment, error) {
 	query := `SELECT ` + shipmentColumns + ` FROM logistics.shipment WHERE id = $1 AND deleted_at IS NULL`
 	var sh Shipment

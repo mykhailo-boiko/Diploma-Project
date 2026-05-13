@@ -133,6 +133,18 @@ func (m *mockShipmentStorage) InTransitSummary(_ context.Context) (shipment.InTr
 	}, nil
 }
 
+func (m *mockShipmentStorage) FindByOrderID(_ context.Context, orderID string) ([]shipment.Shipment, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []shipment.Shipment
+	for _, sh := range m.shipments {
+		if sh.OrderID == orderID {
+			out = append(out, sh)
+		}
+	}
+	return out, nil
+}
+
 type mockCarrierStorage struct {
 	mu       sync.Mutex
 	carriers map[string]carrier.Carrier

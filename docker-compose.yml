@@ -356,6 +356,8 @@ services:
     restart: unless-stopped
     ports:
       - "${FRONTEND_PORT:-3000}:3000"
+    environment:
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
     depends_on:
       api-gateway:
         condition: service_healthy
@@ -378,6 +380,7 @@ services:
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.retention.time=7d"
+      - "--web.enable-lifecycle"
     depends_on:
       api-gateway:
         condition: service_healthy

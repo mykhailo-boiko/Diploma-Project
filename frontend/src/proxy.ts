@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { jwtVerify } from "jose";
 
 const PROTECTED_PREFIXES = [
   "/dashboard",
@@ -17,19 +18,18 @@ const ADMIN_PREFIXES = ["/admin"];
 
 const PUBLIC_PREFIXES = ["/login", "/track", "/_next", "/favicon", "/api/health", "/public"];
 
-function decodeJwtRole(token: string): string | null {
+const SECRET = new TextEncoder().encode(process.env.JWT_SECRET ?? "dev-secret-change-me");
+
+async function verifiedJwtRole(token: string): Promise<string | null> {
   try {
-    const parts = token.split(".");
-    if (parts.length < 2) return null;
-    const padded = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-    const json = JSON.parse(Buffer.from(padded, "base64").toString("utf-8"));
-    return typeof json.role === "string" ? json.role : null;
+    const { payload } = await jwtVerify(token, SECRET, { algorithms: ["HS256"] });
+    return typeof payload.role === "string" ? payload.role : null;
   } catch {
     return null;
   }
 }
 
-export function proxy(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   if (PUBLIC_PREFIXES.some((p) => pathname.startsWith(p))) {
@@ -45,11 +45,16 @@ export function proxy(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  const isAdminPath = ADMIN_PREFIXES.some((p) => pathname.startsWith(p));
-  if (isAdminPath && token) {
-    const cookieRole = request.cookies.get("user_role")?.value;
-    const role = cookieRole || decodeJwtRole(token);
-    if (role !== "admin") {
+  if (isProtected && token) {
+    const role = await verifiedJwtRole(token);
+    if (role === null) {
+      const url = new URL("/login", request.url);
+      url.searchParams.set("from", pathname);
+      url.searchParams.set("reason", "invalid_token");
+      return NextResponse.redirect(url);
+    }
+    const isAdminPath = ADMIN_PREFIXES.some((p) => pathname.startsWith(p));
+    if (isAdminPath && role !== "admin") {
       return NextResponse.redirect(new URL("/dashboard", request.url));
     }
   }

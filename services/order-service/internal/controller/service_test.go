@@ -67,7 +67,7 @@ func (m *mockStorage) ListOrders(_ context.Context, _ order.Filter, _ pagination
 	return result, len(result), nil
 }
 
-func (m *mockStorage) UpdateOrderStatus(_ context.Context, id string, status order.Status) (order.Order, error) {
+func (m *mockStorage) UpdateOrderStatus(_ context.Context, id string, expected, next order.Status) (order.Order, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -75,18 +75,24 @@ func (m *mockStorage) UpdateOrderStatus(_ context.Context, id string, status ord
 	if !ok {
 		return order.Order{}, order.ErrOrderNotFound
 	}
-	o.Status = status
+	if o.Status != expected {
+		return order.Order{}, order.ErrConcurrentStatusUpdate
+	}
+	o.Status = next
 	m.orders[id] = o
 	return o, nil
 }
 
-func (m *mockStorage) CancelOrder(_ context.Context, id string, reason string) (order.Order, error) {
+func (m *mockStorage) CancelOrder(_ context.Context, id string, expected order.Status, reason string) (order.Order, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	o, ok := m.orders[id]
 	if !ok {
 		return order.Order{}, order.ErrOrderNotFound
+	}
+	if o.Status != expected {
+		return order.Order{}, order.ErrConcurrentStatusUpdate
 	}
 	o.Status = order.StatusCancelled
 	o.CancelReason = &reason

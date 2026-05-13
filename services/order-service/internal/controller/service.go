@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -114,8 +115,11 @@ func (s *Service) UpdateOrderStatus(ctx context.Context, id string, newStatus or
 		return order.Order{}, &order.InvalidTransitionError{Current: string(current.Status), Requested: string(newStatus)}
 	}
 
-	updated, err := s.storage.UpdateOrderStatus(ctx, id, newStatus)
+	updated, err := s.storage.UpdateOrderStatus(ctx, id, current.Status, newStatus)
 	if err != nil {
+		if errors.Is(err, order.ErrConcurrentStatusUpdate) {
+			return order.Order{}, err
+		}
 		return order.Order{}, fmt.Errorf("failed to update order status: %w", err)
 	}
 
@@ -142,8 +146,11 @@ func (s *Service) CancelOrder(ctx context.Context, id string, reason string) (or
 		return order.Order{}, order.ErrInvalidTransition
 	}
 
-	cancelled, err := s.storage.CancelOrder(ctx, id, reason)
+	cancelled, err := s.storage.CancelOrder(ctx, id, current.Status, reason)
 	if err != nil {
+		if errors.Is(err, order.ErrConcurrentStatusUpdate) {
+			return order.Order{}, err
+		}
 		return order.Order{}, fmt.Errorf("failed to cancel order: %w", err)
 	}
 
@@ -244,6 +251,8 @@ func (s *Service) publishOrderStatusChanged(o order.Order, previousStatus order.
 		"order_id":        o.ID,
 		"previous_status": string(previousStatus),
 		"new_status":      string(o.Status),
+		"customer_name":   o.CustomerName,
+		"total_amount":    o.TotalAmount,
 	}
 
 	if err := s.nc.Publish("order.status_changed", "order.status_changed", data); err != nil {
