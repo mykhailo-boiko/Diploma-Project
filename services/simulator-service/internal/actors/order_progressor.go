@@ -121,7 +121,7 @@ func (a *OrderProgressor) processBatch(ctx context.Context, t orderProgressTrans
 		}
 
 		if t.to == "shipped" {
-			if err := a.maybeCreateShipment(ctx, o.ID); err != nil {
+			if err := a.maybeCreateShipment(ctx, o.ID, o.CustomerName); err != nil {
 				a.log.Debug("Shipment create failed", zap.String("order_id", o.ID), zap.Error(err))
 			}
 		}
@@ -143,7 +143,7 @@ func (a *OrderProgressor) cancelOrder(ctx context.Context, id string) error {
 	return a.hc.Post(ctx, "/api/v1/orders/"+id+"/cancel", body, nil)
 }
 
-func (a *OrderProgressor) maybeCreateShipment(ctx context.Context, orderID string) error {
+func (a *OrderProgressor) maybeCreateShipment(ctx context.Context, orderID, customerName string) error {
 	warehouses := a.catalog.Warehouses()
 	carriers := a.catalog.Carriers()
 	if len(warehouses) == 0 || len(carriers) == 0 {
@@ -172,6 +172,9 @@ func (a *OrderProgressor) maybeCreateShipment(ctx context.Context, orderID strin
 		"warehouse_id": w.ID,
 		"carrier_id":   c.ID,
 		"address":      address,
+	}
+	if customerName != "" {
+		body["recipient_name"] = customerName
 	}
 	return a.hc.Post(ctx, "/api/v1/shipments", body, nil)
 }
