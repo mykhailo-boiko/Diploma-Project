@@ -8,6 +8,7 @@ import StatusBadge from "@/components/ui/StatusBadge";
 import Button from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { FormField, Input, Textarea } from "@/components/ui/FormField";
+import CopyableID from "@/components/ui/CopyableID";
 import { useForm } from "react-hook-form";
 import { useWarehouses, useCreateWarehouse, type Warehouse } from "@/lib/use-warehouses";
 import { toastSuccess, toastError } from "@/lib/toast";
@@ -78,6 +79,11 @@ export default function WarehousesPage() {
   };
 
   const columns: Column<Warehouse>[] = [
+    {
+      key: "id",
+      header: "ID",
+      render: (row) => <CopyableID id={row.id} label="Warehouse ID" />,
+    },
     { key: "name", header: "Name", sortable: true },
     {
       key: "address",

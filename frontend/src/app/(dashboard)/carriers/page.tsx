@@ -8,6 +8,7 @@ import StatusBadge from "@/components/ui/StatusBadge";
 import Button from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { FormField, Input, Select } from "@/components/ui/FormField";
+import CopyableID from "@/components/ui/CopyableID";
 import { useCarriers, useCreateCarrier, useUpdateCarrier, type Carrier, type CreateCarrierInput, type UpdateCarrierInput } from "@/lib/use-carriers";
 import { toastSuccess, toastError } from "@/lib/toast";
 import { useQueryClient } from "@/lib/api-hooks";
@@ -27,6 +28,11 @@ const CARRIER_TYPE_OPTIONS = [
 ];
 
 const columns: Column<Carrier>[] = [
+  {
+    key: "id",
+    header: "ID",
+    render: (row) => <CopyableID id={row.id} label="Carrier ID" />,
+  },
   { key: "name", header: "Name", sortable: true },
   {
     key: "type",

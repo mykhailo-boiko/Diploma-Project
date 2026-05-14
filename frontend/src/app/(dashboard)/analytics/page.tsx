@@ -16,7 +16,7 @@ import {
   useLogisticsPerformance,
   useAnomalies,
   useOptimizations,
-  useGenerateReport,
+  useDownloadReport,
   type SalesTrend,
   type Anomaly,
   type Optimization,
@@ -47,6 +47,8 @@ import {
   DollarSign,
   ShoppingCart,
   BarChart3,
+  Info,
+  Clock,
 } from "lucide-react";
 
 const PIE_COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6"];
@@ -84,7 +86,7 @@ export default function AnalyticsPage() {
   const logisticsPerf = useLogisticsPerformance(dateFrom, dateTo);
   const anomalies = useAnomalies(dateFrom, dateTo);
   const optimizations = useOptimizations(dateFrom, dateTo);
-  const generateReport = useGenerateReport();
+  const downloadReport = useDownloadReport();
 
   const sales = salesSummary.data?.data;
   const trends = salesTrends.data?.data ?? [];
@@ -188,15 +190,18 @@ export default function AnalyticsPage() {
       {}
       <Card>
         <div className="p-5">
-          <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-gray-900">
-            <AlertTriangle className="h-5 w-5 text-yellow-500" />
-            Anomaly Alerts
-            {anomalyList.length > 0 && (
-              <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
-                {anomalyList.length}
-              </span>
-            )}
-          </h2>
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="flex items-center gap-2 text-lg font-semibold text-gray-900">
+              <AlertTriangle className="h-5 w-5 text-yellow-500" />
+              Anomaly Alerts
+              {anomalyList.length > 0 && (
+                <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
+                  {anomalyList.length}
+                </span>
+              )}
+            </h2>
+          </div>
+          <AnomalyExplainer />
           {anomalyList.length > 0 ? (
             <div className="grid gap-3 sm:grid-cols-2">
               {anomalyList.map((a, i) => (
@@ -212,21 +217,39 @@ export default function AnalyticsPage() {
       {}
       <Card>
         <div className="p-5">
-          <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-gray-900">
-            <Lightbulb className="h-5 w-5 text-amber-500" />
-            Reorder Recommendations
-          </h2>
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <h2 className="flex items-center gap-2 text-lg font-semibold text-gray-900">
+              <Lightbulb className="h-5 w-5 text-amber-500" />
+              Reorder Recommendations
+              {optimizationList.length > 0 && (
+                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                  {optimizationList.length}
+                </span>
+              )}
+            </h2>
+          </div>
+          <p className="mb-3 text-xs text-gray-500">
+            Per-SKU reorder list: products whose available stock is below their
+            minimum threshold. Demand is computed from outbound stock movements
+            over the last 30 days; lead time is assumed 7 days with a 1.5×
+            safety stock multiplier.
+          </p>
           {optimizationList.length > 0 ? (
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
                 <thead>
                   <tr className="border-b text-left text-gray-500">
-                    <th className="pb-2 pr-4 font-medium">Product</th>
-                    <th className="pb-2 pr-4 font-medium">SKU</th>
-                    <th className="pb-2 pr-4 text-right font-medium">Stock</th>
-                    <th className="pb-2 pr-4 text-right font-medium">Reorder Pt</th>
-                    <th className="pb-2 pr-4 text-right font-medium">Recommended</th>
-                    <th className="pb-2 font-medium">Urgency</th>
+                    <th className="pb-2 pr-3 font-medium">Urgency</th>
+                    <th className="pb-2 pr-3 font-medium">Product</th>
+                    <th className="pb-2 pr-3 font-medium">SKU</th>
+                    <th className="pb-2 pr-3 font-medium">Warehouse</th>
+                    <th className="pb-2 pr-3 text-right font-medium">Stock</th>
+                    <th className="pb-2 pr-3 text-right font-medium">Threshold</th>
+                    <th className="pb-2 pr-3 text-right font-medium">Avg/day</th>
+                    <th className="pb-2 pr-3 text-right font-medium">Reorder Pt</th>
+                    <th className="pb-2 pr-3 text-right font-medium">Order Qty</th>
+                    <th className="pb-2 pr-3 text-right font-medium">Days Left</th>
+                    <th className="pb-2 font-medium">Why</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -237,7 +260,7 @@ export default function AnalyticsPage() {
               </table>
             </div>
           ) : (
-            <EmptyState message="No reorder recommendations at this time" />
+            <EmptyState message="No reorder recommendations — all stock levels above threshold" />
           )}
         </div>
       </Card>
@@ -247,15 +270,15 @@ export default function AnalyticsPage() {
         open={reportModalOpen}
         onClose={() => setReportModalOpen(false)}
         onSubmit={(values) => {
-          generateReport.mutate(values, {
-            onSuccess: () => {
-              toastSuccess("Report generated successfully");
+          downloadReport.mutate(values, {
+            onSuccess: (result) => {
+              toastSuccess(`Downloaded ${result.filename}`);
               setReportModalOpen(false);
             },
             onError: toastError,
           });
         }}
-        loading={generateReport.isPending}
+        loading={downloadReport.isPending}
       />
     </div>
   );
@@ -416,7 +439,18 @@ function LogisticsChart({
   );
 }
 
+const CATEGORY_STYLES: Record<string, { label: string; className: string }> = {
+  sales: { label: "Sales", className: "bg-blue-100 text-blue-700" },
+  logistics: { label: "Logistics", className: "bg-orange-100 text-orange-700" },
+  inventory: { label: "Inventory", className: "bg-purple-100 text-purple-700" },
+  business: { label: "Business", className: "bg-emerald-100 text-emerald-700" },
+};
+
 function AnomalyCard({ anomaly }: { anomaly: Anomaly }) {
+  const cat = CATEGORY_STYLES[anomaly.category ?? ""] ?? {
+    label: anomaly.category ?? "Other",
+    className: "bg-gray-100 text-gray-700",
+  };
   return (
     <div
       className={`rounded-lg border p-3 ${
@@ -425,14 +459,21 @@ function AnomalyCard({ anomaly }: { anomaly: Anomaly }) {
           : "border-yellow-200 bg-yellow-50"
       }`}
     >
-      <div className="mb-1 flex items-center justify-between">
-        <span className="text-sm font-medium text-gray-900">{anomaly.metric}</span>
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span
+            className={`rounded-full px-2 py-0.5 text-xs font-medium ${cat.className}`}
+          >
+            {cat.label}
+          </span>
+          <span className="text-sm font-medium text-gray-900">{anomaly.metric}</span>
+        </div>
         <StatusBadge
           status={anomaly.severity === "critical" ? "failed" : "pending"}
         />
       </div>
       <p className="text-sm text-gray-600">{anomaly.message}</p>
-      <div className="mt-1 flex gap-4 text-xs text-gray-400">
+      <div className="mt-1 flex flex-wrap gap-4 text-xs text-gray-400">
         <span>Value: {safeFixed(anomaly.value, 2)}</span>
         <span>Threshold: {safeFixed(anomaly.threshold, 2)}</span>
         <span>{anomaly.date}</span>
@@ -441,25 +482,139 @@ function AnomalyCard({ anomaly }: { anomaly: Anomaly }) {
   );
 }
 
-function OptimizationRow({ opt }: { opt: Optimization }) {
+function AnomalyExplainer() {
+  const [open, setOpen] = useState(false);
   return (
-    <tr className="border-b last:border-0">
-      <td className="py-2 pr-4 font-medium text-gray-900">{opt.product_name}</td>
-      <td className="py-2 pr-4 text-gray-500">{opt.product_sku}</td>
-      <td className="py-2 pr-4 text-right">{opt.current_stock}</td>
-      <td className="py-2 pr-4 text-right">{safeFixed(opt.reorder_point, 0)}</td>
-      <td className="py-2 pr-4 text-right font-medium">{safeFixed(opt.recommended_order, 0)}</td>
-      <td className="py-2">
-        <StatusBadge
-          status={
-            opt.urgency === "critical"
-              ? "failed"
-              : opt.urgency === "warning"
-                ? "pending"
-                : "active"
-          }
-        />
+    <div className="mb-3 rounded-lg border border-blue-100 bg-blue-50/60">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm font-medium text-blue-900 hover:bg-blue-50"
+      >
+        <span className="flex items-center gap-2">
+          <Info className="h-4 w-4" />
+          How are these anomalies detected?
+        </span>
+        <span className="text-xs text-blue-600">{open ? "Hide" : "Show"}</span>
+      </button>
+      {open && (
+        <div className="space-y-2 border-t border-blue-100 px-3 py-3 text-xs text-gray-700">
+          <p>
+            The detector scans aggregated daily metrics for the selected period
+            and flags points that breach statistical or business thresholds.
+            Severity is <span className="font-semibold">warning</span> at
+            ~2σ deviation, <span className="font-semibold">critical</span> at
+            ~3σ.
+          </p>
+          <table className="w-full border-separate border-spacing-y-1">
+            <thead>
+              <tr className="text-left text-gray-500">
+                <th className="pr-3 font-medium">Category</th>
+                <th className="pr-3 font-medium">Rule</th>
+                <th className="font-medium">Source</th>
+              </tr>
+            </thead>
+            <tbody className="text-gray-700">
+              <tr>
+                <td className="pr-3 align-top">
+                  <span className="rounded-full bg-blue-100 px-2 py-0.5 font-medium text-blue-700">
+                    Sales
+                  </span>
+                </td>
+                <td className="pr-3">
+                  Daily revenue deviates &gt;2σ from period mean, OR a day with
+                  zero orders.
+                </td>
+                <td>
+                  <code>analytics.sales_daily</code>
+                </td>
+              </tr>
+              <tr>
+                <td className="pr-3 align-top">
+                  <span className="rounded-full bg-orange-100 px-2 py-0.5 font-medium text-orange-700">
+                    Logistics
+                  </span>
+                </td>
+                <td className="pr-3">
+                  Failure rate &gt;20% per day, OR on-time delivery rate &lt;80%.
+                </td>
+                <td>
+                  <code>analytics.logistics_daily</code>
+                </td>
+              </tr>
+              <tr>
+                <td className="pr-3 align-top">
+                  <span className="rounded-full bg-purple-100 px-2 py-0.5 font-medium text-purple-700">
+                    Inventory
+                  </span>
+                </td>
+                <td className="pr-3">
+                  More than 10% of products below their minimum stock threshold.
+                </td>
+                <td>
+                  <code>analytics.inventory_snapshots</code>
+                </td>
+              </tr>
+              <tr>
+                <td className="pr-3 align-top">
+                  <span className="rounded-full bg-emerald-100 px-2 py-0.5 font-medium text-emerald-700">
+                    Business
+                  </span>
+                </td>
+                <td className="pr-3">
+                  Average order value drops &gt;2σ below the period mean
+                  (requires ≥7 sample days).
+                </td>
+                <td>
+                  <code>analytics.sales_daily</code>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <p className="text-gray-500">
+            Aggregates are kept up-to-date by NATS consumers reacting to
+            order/shipment/inventory events.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OptimizationRow({ opt }: { opt: Optimization }) {
+  const urgencyClass =
+    opt.urgency === "critical"
+      ? "bg-red-100 text-red-700"
+      : opt.urgency === "warning"
+        ? "bg-amber-100 text-amber-700"
+        : "bg-blue-100 text-blue-700";
+
+  const daysLeft =
+    !isFinite(opt.days_until_stockout) || opt.days_until_stockout >= 999
+      ? "—"
+      : safeFixed(opt.days_until_stockout, 1);
+
+  return (
+    <tr className="border-b last:border-0 align-top">
+      <td className="py-2 pr-3">
+        <span
+          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium uppercase ${urgencyClass}`}
+        >
+          {opt.urgency === "critical" && <AlertTriangle className="h-3 w-3" />}
+          {opt.urgency === "warning" && <Clock className="h-3 w-3" />}
+          {opt.urgency}
+        </span>
       </td>
+      <td className="py-2 pr-3 font-medium text-gray-900">{opt.product_name}</td>
+      <td className="py-2 pr-3 font-mono text-xs text-gray-500">{opt.product_sku}</td>
+      <td className="py-2 pr-3 text-gray-700">{opt.warehouse_name}</td>
+      <td className="py-2 pr-3 text-right font-medium text-gray-900">{opt.current_stock}</td>
+      <td className="py-2 pr-3 text-right text-gray-500">{opt.min_threshold}</td>
+      <td className="py-2 pr-3 text-right text-gray-500">{safeFixed(opt.avg_daily_demand, 1)}</td>
+      <td className="py-2 pr-3 text-right text-gray-700">{safeFixed(opt.reorder_point, 0)}</td>
+      <td className="py-2 pr-3 text-right font-semibold text-blue-600">{safeFixed(opt.recommended_order, 0)}</td>
+      <td className="py-2 pr-3 text-right text-gray-700">{daysLeft}</td>
+      <td className="py-2 max-w-md text-xs text-gray-500">{opt.reason}</td>
     </tr>
   );
 }
@@ -474,6 +629,11 @@ function EmptyState({ message }: { message: string }) {
     </div>
   );
 }
+
+const REPORT_FORMATS = [
+  { value: "csv", label: "CSV (Excel-friendly)" },
+  { value: "json", label: "JSON (raw data)" },
+];
 
 function ReportModal({
   open,
@@ -492,6 +652,7 @@ function ReportModal({
       report_type: "full",
       date_from: dateFrom,
       date_to: dateTo,
+      format: "csv",
     },
   });
 
@@ -507,6 +668,12 @@ function ReportModal({
           <Select
             registration={register("report_type")}
             options={REPORT_TYPES}
+          />
+        </FormField>
+        <FormField label="Format" required>
+          <Select
+            registration={register("format")}
+            options={REPORT_FORMATS}
           />
         </FormField>
         <div className="grid grid-cols-2 gap-3">
@@ -525,12 +692,15 @@ function ReportModal({
             />
           </FormField>
         </div>
+        <p className="text-xs text-gray-500">
+          The file will be downloaded automatically once it is ready.
+        </p>
         <div className="flex justify-end gap-3 pt-2">
           <Button variant="secondary" type="button" onClick={handleClose}>
             Cancel
           </Button>
           <Button type="submit" loading={loading}>
-            Generate
+            Download
           </Button>
         </div>
       </form>

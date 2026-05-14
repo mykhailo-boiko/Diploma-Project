@@ -68,11 +68,10 @@ export default function DashboardPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-      <p className="mt-1 text-gray-600">
-        Welcome back, {user.first_name}! You are logged in as{" "}
-        {formatRole(user.role)}.
-      </p>
+      <div className="flex items-baseline justify-between">
+        <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+        <span className="text-sm text-gray-500">{formatRole(user.role)}</span>
+      </div>
 
       <div className="mt-6 space-y-6">
         <KPIRow role={role} />

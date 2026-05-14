@@ -839,3 +839,68 @@ func (s *PostgresStorage) GetLogisticsDaily(ctx context.Context, from, to time.T
 
 	return results, nil
 }
+
+func (s *PostgresStorage) GetReorderCandidates(ctx context.Context, lookbackDays, limit int) ([]ProductStockSnapshot, error) {
+	if lookbackDays <= 0 {
+		lookbackDays = 30
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+
+	query := `
+		WITH outbound AS (
+			SELECT product_id, warehouse_id, COALESCE(SUM(quantity), 0) AS qty
+			FROM inventory.stock_movement
+			WHERE type IN ('outbound', 'reserve')
+			  AND created_at >= NOW() - make_interval(days => $1::int)
+			GROUP BY product_id, warehouse_id
+		)
+		SELECT
+			s.product_id,
+			p.sku,
+			p.name,
+			s.warehouse_id,
+			w.name,
+			GREATEST(s.quantity - s.reserved, 0) AS available,
+			s.min_threshold,
+			COALESCE(o.qty, 0) AS outbound_qty
+		FROM inventory.stock s
+		JOIN inventory.product p ON p.id = s.product_id AND p.deleted_at IS NULL
+		JOIN inventory.warehouse w ON w.id = s.warehouse_id
+		LEFT JOIN outbound o ON o.product_id = s.product_id AND o.warehouse_id = s.warehouse_id
+		WHERE s.min_threshold > 0
+		  AND GREATEST(s.quantity - s.reserved, 0) < s.min_threshold
+		ORDER BY
+			CASE WHEN GREATEST(s.quantity - s.reserved, 0) = 0 THEN 0 ELSE 1 END,
+			(s.min_threshold - GREATEST(s.quantity - s.reserved, 0))::float / NULLIF(s.min_threshold, 0) DESC,
+			COALESCE(o.qty, 0) DESC
+		LIMIT $2
+	`
+
+	rows, err := s.pool.Query(ctx, query, lookbackDays, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query reorder candidates: %w", err)
+	}
+	defer rows.Close()
+
+	results, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (ProductStockSnapshot, error) {
+		var r ProductStockSnapshot
+		err := row.Scan(
+			&r.ProductID,
+			&r.SKU,
+			&r.ProductName,
+			&r.WarehouseID,
+			&r.WarehouseName,
+			&r.Available,
+			&r.MinThreshold,
+			&r.OutboundLast30Days,
+		)
+		return r, err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to collect reorder candidates: %w", err)
+	}
+
+	return results, nil
+}

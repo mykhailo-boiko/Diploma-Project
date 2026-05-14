@@ -88,20 +88,37 @@ type Anomaly struct {
 }
 
 type Optimization struct {
-	Type            string  `json:"type"`
-	ProductMetric   string  `json:"product_metric"`
-	CurrentStock    int     `json:"current_stock"`
-	AvgDemand       float64 `json:"avg_demand"`
-	ReorderPoint    int     `json:"reorder_point"`
-	RecommendedQty  int     `json:"recommended_qty"`
-	SafetyStock     int     `json:"safety_stock"`
-	Message         string  `json:"message"`
+	ProductID         string  `json:"product_id"`
+	ProductSKU        string  `json:"product_sku"`
+	ProductName       string  `json:"product_name"`
+	WarehouseID       string  `json:"warehouse_id"`
+	WarehouseName     string  `json:"warehouse_name"`
+	CurrentStock      int     `json:"current_stock"`
+	MinThreshold      int     `json:"min_threshold"`
+	AvgDailyDemand    float64 `json:"avg_daily_demand"`
+	ReorderPoint      int     `json:"reorder_point"`
+	RecommendedOrder  int     `json:"recommended_order"`
+	DaysUntilStockout float64 `json:"days_until_stockout"`
+	Urgency           string  `json:"urgency"`
+	Reason            string  `json:"reason"`
+}
+
+type ProductStockSnapshot struct {
+	ProductID     string
+	SKU           string
+	ProductName   string
+	WarehouseID   string
+	WarehouseName string
+	Available     int
+	MinThreshold  int
+	OutboundLast30Days int
 }
 
 type ReportRequest struct {
 	ReportType string `json:"report_type"`
 	DateFrom   string `json:"date_from"`
 	DateTo     string `json:"date_to"`
+	Format     string `json:"format,omitempty"`
 }
 
 type Report struct {
@@ -291,6 +308,7 @@ type Storage interface {
 	GetMetricValue(ctx context.Context, metric string, from, to time.Time) (float64, error)
 	QueryAuditLog(ctx context.Context, filter AuditFilter) ([]AuditEntry, error)
 	GetDailyMetricSeries(ctx context.Context, metric string, from, to time.Time) ([]ForecastPoint, error)
+	GetReorderCandidates(ctx context.Context, lookbackDays, limit int) ([]ProductStockSnapshot, error)
 }
 
 var ErrCustomerNotFound = errors.New("customer not found")

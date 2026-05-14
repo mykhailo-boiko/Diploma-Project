@@ -1,6 +1,10 @@
 "use client";
 
+import { useMutation } from "@tanstack/react-query";
 import { useApiQuery, useApiMutation, type SingleResponse } from "./api-hooks";
+import { ApiError } from "./api";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
 export interface SalesSummary {
   total_revenue: number;
@@ -33,6 +37,7 @@ export interface LogisticsPerformance {
 }
 
 export interface Anomaly {
+  category?: string;
   type: string;
   metric: string;
   value: number;
@@ -44,21 +49,25 @@ export interface Anomaly {
 
 export interface Optimization {
   product_id: string;
-  product_name: string;
   product_sku: string;
+  product_name: string;
   warehouse_id: string;
+  warehouse_name: string;
   current_stock: number;
-  avg_daily_demand: number;
+  min_threshold: number;
   reorder_point: number;
   recommended_order: number;
+  avg_daily_demand: number;
+  days_until_stockout: number;
   urgency: string;
-  message: string;
+  reason: string;
 }
 
 export interface ReportRequest {
   report_type: string;
   date_from: string;
   date_to: string;
+  format?: "json" | "csv";
 }
 
 export interface Report {
@@ -132,4 +141,86 @@ export function useGenerateReport() {
     "POST",
     () => "/api/v1/analytics/report",
   );
+}
+
+export interface DownloadReportResult {
+  filename: string;
+  size: number;
+  contentType: string;
+}
+
+export function useDownloadReport() {
+  return useMutation<DownloadReportResult, ApiError, ReportRequest>({
+    mutationFn: async (req) => {
+      const token =
+        typeof window !== "undefined"
+          ? localStorage.getItem("access_token")
+          : null;
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
+      const res = await fetch(`${API_BASE}/api/v1/analytics/report`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(req),
+      });
+
+      if (res.status === 401) {
+        if (typeof window !== "undefined") {
+          localStorage.removeItem("access_token");
+          localStorage.removeItem("refresh_token");
+          window.location.href = "/login";
+        }
+        throw new ApiError(401, "unauthorized", "Unauthorized");
+      }
+
+      const contentType = res.headers.get("Content-Type") ?? "";
+
+      if (!res.ok) {
+        let code = "unknown";
+        let message = res.statusText;
+        if (contentType.includes("application/json")) {
+          const errBody = await res.json().catch(() => ({}));
+          code = errBody?.error?.code ?? code;
+          message = errBody?.error?.message ?? message;
+        } else {
+          message = (await res.text().catch(() => message)) || message;
+        }
+        throw new ApiError(res.status, code, message);
+      }
+
+      const headerName =
+        res.headers.get("X-Report-Filename") ??
+        parseFilenameFromDisposition(res.headers.get("Content-Disposition"));
+      const fallback = `chainorchestra-${req.report_type}-${req.date_from}-to-${req.date_to}.${
+        req.format === "csv" ? "csv" : "json"
+      }`;
+      const filename = headerName || fallback;
+
+      const blob = await res.blob();
+      triggerBlobDownload(blob, filename);
+
+      return { filename, size: blob.size, contentType };
+    },
+  });
+}
+
+function parseFilenameFromDisposition(value: string | null): string | null {
+  if (!value) return null;
+  const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(value);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+function triggerBlobDownload(blob: Blob, filename: string) {
+  if (typeof window === "undefined") return;
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

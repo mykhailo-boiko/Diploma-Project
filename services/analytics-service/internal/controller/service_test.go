@@ -16,6 +16,7 @@ type mockStorage struct {
 	salesDaily         []analytics.SalesDaily
 	inventorySnapshots []analytics.InventorySnapshot
 	logisticsDaily     []analytics.LogisticsDaily
+	reorderCandidates  []analytics.ProductStockSnapshot
 }
 
 func newMockStorage() *mockStorage {
@@ -129,6 +130,14 @@ func (m *mockStorage) GetDailyMetricSeries(_ context.Context, _ string, _, _ tim
 
 func (m *mockStorage) GetCarrierPerformance(_ context.Context, _, _ time.Time, _ int, _ int) ([]analytics.CarrierPerformance, error) {
 	return []analytics.CarrierPerformance{}, nil
+}
+
+func (m *mockStorage) GetReorderCandidates(_ context.Context, _, _ int) ([]analytics.ProductStockSnapshot, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]analytics.ProductStockSnapshot, len(m.reorderCandidates))
+	copy(out, m.reorderCandidates)
+	return out, nil
 }
 
 func newTestService() (*Service, *mockStorage) {
@@ -465,44 +474,76 @@ func TestDetectAnomalies_HighFailureRate(t *testing.T) {
 	}
 }
 
-func TestGetOptimizations_BelowReorderPoint(t *testing.T) {
+func TestGetOptimizations_PerProductWithDemand(t *testing.T) {
 	svc, storage := newTestService()
 
-	date1 := time.Date(2026, 4, 10, 0, 0, 0, 0, time.UTC)
-	date2 := time.Date(2026, 4, 11, 0, 0, 0, 0, time.UTC)
-
-	storage.salesDaily = []analytics.SalesDaily{
-		{ID: "s1", Date: date1, TotalOrders: 100, TotalRevenue: 5000.00},
-		{ID: "s2", Date: date2, TotalOrders: 100, TotalRevenue: 5000.00},
+	storage.reorderCandidates = []analytics.ProductStockSnapshot{
+		{
+			ProductID:          "p1",
+			SKU:                "SKU-001",
+			ProductName:        "Widget Alpha",
+			WarehouseID:        "w1",
+			WarehouseName:      "Kyiv DC",
+			Available:          5,
+			MinThreshold:       50,
+			OutboundLast30Days: 60,
+		},
 	}
-	storage.inventorySnapshots = []analytics.InventorySnapshot{
-		{ID: "inv1", Date: date2, TotalProducts: 50, TotalQuantity: 10, TotalReserved: 5, TotalAvailable: 5, LowStockCount: 3},
-	}
 
-	opts, err := svc.GetOptimizations(t.Context(), date1, date2)
+	from := time.Date(2026, 4, 10, 0, 0, 0, 0, time.UTC)
+	to := time.Date(2026, 4, 11, 0, 0, 0, 0, time.UTC)
+
+	opts, err := svc.GetOptimizations(t.Context(), from, to)
 	if err != nil {
 		t.Fatalf("GetOptimizations failed: %v", err)
 	}
-
-	if len(opts) == 0 {
-		t.Fatal("expected at least one optimization")
+	if len(opts) != 1 {
+		t.Fatalf("expected 1 optimization, got %d", len(opts))
 	}
 
-	foundReorder := false
-	foundLow := false
-	for _, o := range opts {
-		if o.Type == "reorder" {
-			foundReorder = true
-		}
-		if o.Type == "low_stock_alert" {
-			foundLow = true
-		}
+	o := opts[0]
+	if o.ProductID != "p1" || o.WarehouseID != "w1" {
+		t.Errorf("unexpected ids: %+v", o)
 	}
-	if !foundReorder {
-		t.Error("expected reorder optimization")
+	if o.AvgDailyDemand <= 0 {
+		t.Errorf("expected positive avg demand, got %f", o.AvgDailyDemand)
 	}
-	if !foundLow {
-		t.Error("expected low_stock_alert optimization")
+	if o.Urgency != "critical" && o.Urgency != "warning" {
+		t.Errorf("expected critical/warning urgency, got %s", o.Urgency)
+	}
+	if o.RecommendedOrder <= 0 {
+		t.Errorf("expected positive recommended order, got %d", o.RecommendedOrder)
+	}
+	if o.Reason == "" {
+		t.Error("expected reason text")
+	}
+}
+
+func TestGetOptimizations_StockOutCritical(t *testing.T) {
+	svc, storage := newTestService()
+
+	storage.reorderCandidates = []analytics.ProductStockSnapshot{
+		{
+			ProductID:          "p2",
+			SKU:                "SKU-002",
+			ProductName:        "Widget Beta",
+			WarehouseID:        "w1",
+			WarehouseName:      "Kyiv DC",
+			Available:          0,
+			MinThreshold:       30,
+			OutboundLast30Days: 30,
+		},
+	}
+
+	from := time.Date(2026, 4, 10, 0, 0, 0, 0, time.UTC)
+	to := time.Date(2026, 4, 11, 0, 0, 0, 0, time.UTC)
+
+	opts, err := svc.GetOptimizations(t.Context(), from, to)
+	if err != nil {
+		t.Fatalf("GetOptimizations failed: %v", err)
+	}
+	if len(opts) != 1 || opts[0].Urgency != "critical" {
+		t.Fatalf("expected single critical opt, got %+v", opts)
 	}
 }
 

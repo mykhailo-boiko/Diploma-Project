@@ -1034,73 +1034,96 @@ func (s *Service) GetPeriodComparison(
 }
 
 func (s *Service) GetOptimizations(ctx context.Context, from, to time.Time) ([]analytics.Optimization, error) {
-	salesRecords, err := s.storage.GetSalesDaily(ctx, from, to)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get sales daily: %w", err)
-	}
-
-	snapshots, err := s.storage.GetInventorySnapshots(ctx, from, to)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get inventory snapshots: %w", err)
-	}
-
-	var optimizations []analytics.Optimization
-
-	if len(salesRecords) == 0 || len(snapshots) == 0 {
-		return optimizations, nil
-	}
-
-	var totalOrders int
-	for _, r := range salesRecords {
-		totalOrders += r.TotalOrders
-	}
-	avgDailyDemand := float64(totalOrders) / float64(len(salesRecords))
-
-	latest := snapshots[len(snapshots)-1]
-
+	const lookbackDays = 30
 	const leadTimeDays = 7
 	const safetyFactor = 1.5
+	const limit = 50
 
-	safetyStock := int(math.Ceil(avgDailyDemand * safetyFactor))
-	reorderPoint := int(math.Ceil(avgDailyDemand*leadTimeDays)) + safetyStock
-	recommendedQty := int(math.Ceil(avgDailyDemand * leadTimeDays * 2))
+	candidates, err := s.storage.GetReorderCandidates(ctx, lookbackDays, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get reorder candidates: %w", err)
+	}
 
-	if latest.TotalAvailable < reorderPoint {
+	optimizations := make([]analytics.Optimization, 0, len(candidates))
+	for _, c := range candidates {
+		avgDailyDemand := float64(c.OutboundLast30Days) / float64(lookbackDays)
+		if avgDailyDemand < 0 {
+			avgDailyDemand = 0
+		}
+
+		safetyStock := int(math.Ceil(avgDailyDemand * safetyFactor))
+		reorderPoint := int(math.Ceil(avgDailyDemand*leadTimeDays)) + safetyStock
+		if reorderPoint < c.MinThreshold {
+			reorderPoint = c.MinThreshold
+		}
+
+		targetStock := reorderPoint*2 + safetyStock
+		recommendedOrder := targetStock - c.Available
+		if recommendedOrder < c.MinThreshold {
+			recommendedOrder = c.MinThreshold
+		}
+		if recommendedOrder < 1 {
+			recommendedOrder = 1
+		}
+
+		daysUntilStockout := 999.0
+		if avgDailyDemand > 0 {
+			daysUntilStockout = float64(c.Available) / avgDailyDemand
+			if daysUntilStockout > 999 || math.IsInf(daysUntilStockout, 0) || math.IsNaN(daysUntilStockout) {
+				daysUntilStockout = 999
+			}
+		}
+
+		urgency := "info"
+		switch {
+		case c.Available <= 0:
+			urgency = "critical"
+		case avgDailyDemand > 0 && daysUntilStockout < float64(leadTimeDays):
+			urgency = "critical"
+		case c.Available*2 < c.MinThreshold:
+			urgency = "warning"
+		case avgDailyDemand > 0 && daysUntilStockout < float64(leadTimeDays)*2:
+			urgency = "warning"
+		}
+
+		var reason string
+		switch {
+		case c.Available <= 0:
+			reason = fmt.Sprintf(
+				"Stock-out at %s. Sold %d units in last %d days (~%.1f/day). Order at least %d units to cover lead time.",
+				c.WarehouseName, c.OutboundLast30Days, lookbackDays, avgDailyDemand, recommendedOrder,
+			)
+		case avgDailyDemand > 0:
+			reason = fmt.Sprintf(
+				"Available %d at %s — will run out in ~%.1f days at current pace (%.1f units/day). Lead time %d days.",
+				c.Available, c.WarehouseName, daysUntilStockout, avgDailyDemand, leadTimeDays,
+			)
+		default:
+			reason = fmt.Sprintf(
+				"Available %d at %s is below threshold %d. No demand recorded in last %d days — restock to threshold or deactivate SKU.",
+				c.Available, c.WarehouseName, c.MinThreshold, lookbackDays,
+			)
+		}
+
 		optimizations = append(optimizations, analytics.Optimization{
-			Type:           "reorder",
-			ProductMetric:  "all_products",
-			CurrentStock:   latest.TotalAvailable,
-			AvgDemand:      avgDailyDemand,
-			ReorderPoint:   reorderPoint,
-			RecommendedQty: recommendedQty,
-			SafetyStock:    safetyStock,
-			Message: fmt.Sprintf(
-				"Current available stock (%d) is below reorder point (%d). Recommended order quantity: %d units",
-				latest.TotalAvailable, reorderPoint, recommendedQty,
-			),
+			ProductID:         c.ProductID,
+			ProductSKU:        c.SKU,
+			ProductName:       c.ProductName,
+			WarehouseID:       c.WarehouseID,
+			WarehouseName:     c.WarehouseName,
+			CurrentStock:      c.Available,
+			MinThreshold:      c.MinThreshold,
+			AvgDailyDemand:    math.Round(avgDailyDemand*100) / 100,
+			ReorderPoint:      reorderPoint,
+			RecommendedOrder:  recommendedOrder,
+			DaysUntilStockout: math.Round(daysUntilStockout*10) / 10,
+			Urgency:           urgency,
+			Reason:            reason,
 		})
 	}
 
-	if latest.LowStockCount > 0 {
-		optimizations = append(optimizations, analytics.Optimization{
-			Type:           "low_stock_alert",
-			ProductMetric:  "low_stock_products",
-			CurrentStock:   latest.LowStockCount,
-			AvgDemand:      avgDailyDemand,
-			ReorderPoint:   reorderPoint,
-			RecommendedQty: recommendedQty,
-			SafetyStock:    safetyStock,
-			Message: fmt.Sprintf(
-				"%d products are below their minimum stock threshold. Immediate restocking recommended",
-				latest.LowStockCount,
-			),
-		})
-	}
-
-	if optimizations == nil {
-		optimizations = []analytics.Optimization{}
-	}
-
+	_ = from
+	_ = to
 	return optimizations, nil
 }
 

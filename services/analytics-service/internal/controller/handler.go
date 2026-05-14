@@ -1,12 +1,16 @@
 package controller
 
 import (
+	"bytes"
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"go.uber.org/zap"
@@ -259,7 +263,129 @@ func (c *AnalyticsController) GenerateReport(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	httpresponse.OK(w, report)
+	format := strings.ToLower(strings.TrimSpace(req.Format))
+	if format == "" {
+		format = strings.ToLower(strings.TrimSpace(r.URL.Query().Get("format")))
+	}
+
+	switch format {
+	case "csv":
+		csvBody, csvErr := renderReportCSV(report)
+		if csvErr != nil {
+			c.log.Error("Failed to render CSV report", zap.Error(csvErr))
+			httpresponse.InternalError(w, "internal_error", "failed to render CSV")
+			return
+		}
+		filename := fmt.Sprintf("chainorchestra-%s-%s-to-%s.csv", report.ReportType, report.DateFrom, report.DateTo)
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
+		w.Header().Set("X-Report-Filename", filename)
+		w.Header().Set("Access-Control-Expose-Headers", "Content-Disposition, X-Report-Filename")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(csvBody)
+	default:
+		httpresponse.OK(w, report)
+	}
+}
+
+func renderReportCSV(report analytics.Report) ([]byte, error) {
+	var buf bytes.Buffer
+	writer := csv.NewWriter(&buf)
+
+	header := []string{
+		fmt.Sprintf("# ChainOrchestra %s report", strings.ToUpper(report.ReportType)),
+	}
+	if err := writer.Write(header); err != nil {
+		return nil, err
+	}
+	if err := writer.Write([]string{fmt.Sprintf("# period: %s to %s", report.DateFrom, report.DateTo)}); err != nil {
+		return nil, err
+	}
+	if err := writer.Write([]string{fmt.Sprintf("# generated_at: %s", report.GeneratedAt)}); err != nil {
+		return nil, err
+	}
+	if err := writer.Write(nil); err != nil {
+		return nil, err
+	}
+
+	switch report.ReportType {
+	case "sales":
+		rows, _ := report.Data.([]analytics.SalesDaily)
+		writeSalesSection(writer, rows)
+	case "inventory":
+		rows, _ := report.Data.([]analytics.InventorySnapshot)
+		writeInventorySection(writer, rows)
+	case "logistics":
+		rows, _ := report.Data.([]analytics.LogisticsDaily)
+		writeLogisticsSection(writer, rows)
+	case "full":
+		mixed, ok := report.Data.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("unexpected full-report data shape")
+		}
+		if sales, sok := mixed["sales"].([]analytics.SalesDaily); sok {
+			_ = writer.Write([]string{"## SALES"})
+			writeSalesSection(writer, sales)
+			_ = writer.Write(nil)
+		}
+		if inv, iok := mixed["inventory"].([]analytics.InventorySnapshot); iok {
+			_ = writer.Write([]string{"## INVENTORY"})
+			writeInventorySection(writer, inv)
+			_ = writer.Write(nil)
+		}
+		if logs, lok := mixed["logistics"].([]analytics.LogisticsDaily); lok {
+			_ = writer.Write([]string{"## LOGISTICS"})
+			writeLogisticsSection(writer, logs)
+		}
+	default:
+		return nil, fmt.Errorf("unsupported report type: %s", report.ReportType)
+	}
+
+	writer.Flush()
+	if err := writer.Error(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func writeSalesSection(w *csv.Writer, rows []analytics.SalesDaily) {
+	_ = w.Write([]string{"date", "total_orders", "total_revenue", "avg_order_size"})
+	for _, r := range rows {
+		_ = w.Write([]string{
+			r.Date.Format("2006-01-02"),
+			strconv.Itoa(r.TotalOrders),
+			strconv.FormatFloat(r.TotalRevenue, 'f', 2, 64),
+			strconv.FormatFloat(r.AvgOrderSize, 'f', 2, 64),
+		})
+	}
+}
+
+func writeInventorySection(w *csv.Writer, rows []analytics.InventorySnapshot) {
+	_ = w.Write([]string{"date", "total_products", "total_quantity", "total_reserved", "total_available", "low_stock_count"})
+	for _, r := range rows {
+		_ = w.Write([]string{
+			r.Date.Format("2006-01-02"),
+			strconv.Itoa(r.TotalProducts),
+			strconv.Itoa(r.TotalQuantity),
+			strconv.Itoa(r.TotalReserved),
+			strconv.Itoa(r.TotalAvailable),
+			strconv.Itoa(r.LowStockCount),
+		})
+	}
+}
+
+func writeLogisticsSection(w *csv.Writer, rows []analytics.LogisticsDaily) {
+	_ = w.Write([]string{"date", "total_shipments", "delivered_count", "failed_count", "avg_delivery_hours", "on_time_rate"})
+	for _, r := range rows {
+		_ = w.Write([]string{
+			r.Date.Format("2006-01-02"),
+			strconv.Itoa(r.TotalShipments),
+			strconv.Itoa(r.DeliveredCount),
+			strconv.Itoa(r.FailedCount),
+			strconv.FormatFloat(r.AvgDeliveryH, 'f', 2, 64),
+			strconv.FormatFloat(r.OnTimeRate, 'f', 2, 64),
+		})
+	}
 }
 
 func (c *AnalyticsController) RunWhatIf(w http.ResponseWriter, r *http.Request) {

@@ -8,6 +8,7 @@ import Button from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Modal } from "@/components/ui/Modal";
 import { FormField, Input, Select } from "@/components/ui/FormField";
+import CopyableID from "@/components/ui/CopyableID";
 import {
   useStock,
   useStockMovements,
@@ -117,21 +118,13 @@ export default function StockPage() {
       key: "product_id",
       header: "Product ID",
       sortable: true,
-      render: (row) => (
-        <span className="font-mono text-xs text-gray-600">
-          {row.product_id.slice(0, 8)}...
-        </span>
-      ),
+      render: (row) => <CopyableID id={row.product_id} label="Product ID" />,
     },
     {
       key: "warehouse_id",
       header: "Warehouse ID",
       sortable: true,
-      render: (row) => (
-        <span className="font-mono text-xs text-gray-600">
-          {row.warehouse_id.slice(0, 8)}...
-        </span>
-      ),
+      render: (row) => <CopyableID id={row.warehouse_id} label="Warehouse ID" />,
     },
     {
       key: "quantity",
@@ -221,20 +214,12 @@ export default function StockPage() {
     {
       key: "product_id",
       header: "Product",
-      render: (row) => (
-        <span className="font-mono text-xs text-gray-600">
-          {row.product_id.slice(0, 8)}...
-        </span>
-      ),
+      render: (row) => <CopyableID id={row.product_id} label="Product ID" />,
     },
     {
       key: "warehouse_id",
       header: "Warehouse",
-      render: (row) => (
-        <span className="font-mono text-xs text-gray-600">
-          {row.warehouse_id.slice(0, 8)}...
-        </span>
-      ),
+      render: (row) => <CopyableID id={row.warehouse_id} label="Warehouse ID" />,
     },
     {
       key: "reference",
@@ -258,13 +243,14 @@ export default function StockPage() {
     { key: "product_sku", header: "SKU", render: (row) => <span className="font-mono text-xs">{row.product_sku}</span> },
     { key: "product_name", header: "Product" },
     {
+      key: "product_id",
+      header: "Product ID",
+      render: (row) => <CopyableID id={row.product_id} label="Product ID" />,
+    },
+    {
       key: "warehouse_id",
       header: "Warehouse",
-      render: (row) => (
-        <span className="font-mono text-xs text-gray-600">
-          {row.warehouse_id.slice(0, 8)}...
-        </span>
-      ),
+      render: (row) => <CopyableID id={row.warehouse_id} label="Warehouse ID" />,
     },
     { key: "available", header: "Available", className: "text-right", render: (row) => <span className="font-medium text-red-600">{row.available}</span> },
     { key: "min_threshold", header: "Threshold", className: "text-right" },
