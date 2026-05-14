@@ -52,8 +52,8 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-chainorchestra}
       POSTGRES_SCHEMA: users
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
-      JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-15m}
-      JWT_REFRESH_TTL: ${JWT_REFRESH_TTL:-168h}
+      JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-168h}
+      JWT_REFRESH_TTL: ${JWT_REFRESH_TTL:-720h}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@chainorchestra.local}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
       NATS_URL: nats://nats:4222
@@ -332,6 +332,8 @@ services:
       TOOL_TIMEOUT: ${TOOL_TIMEOUT:-30}
       RETRY_MAX_ATTEMPTS: ${RETRY_MAX_ATTEMPTS:-3}
       SESSION_TTL: ${SESSION_TTL:-1800}
+      MAX_TOKENS_PER_SESSION: ${MAX_TOKENS_PER_SESSION:-2000000}
+      MAX_TOKENS_PER_USER_PER_HOUR: ${MAX_TOKENS_PER_USER_PER_HOUR:-10000000}
       REDIS_URL: redis://redis:6379/0
     depends_on:
       api-gateway:
