@@ -67,8 +67,8 @@ class SessionBudget:
             )
             suggestion = (
                 "Tell the user that the request is too large to complete in one chat. "
-                "Suggest narrowing the question (smaller date window, fewer entities, more specific filter) "
-                "and starting a new chat session."
+                "Ask the user to send /clear to reset the token budget for this session, "
+                "then narrow the question (smaller date window, fewer entities, more specific filter)."
             )
         elif user_id and user_hour_used >= user_hour_cap:
             exceeded = True

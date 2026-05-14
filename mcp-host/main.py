@@ -181,7 +181,11 @@ async def websocket_chat(ws: WebSocket) -> None:
                 history = []
                 if _context_store:
                     await _context_store.delete(session_id)
-                await _send(ws, "system", "Conversation history cleared.")
+                if _budget:
+                    await _budget.reset(session_id)
+                if _loop_guard:
+                    await _loop_guard.reset(session_id)
+                await _send(ws, "system", "Conversation history, token budget, and loop counters cleared.")
                 continue
 
             logger.info("User %s: %s", claims.user_id, user_text[:100])

@@ -512,8 +512,9 @@ async def _run_tool_loop(
             status = await budget.get_status(session_id, user_id)
             if status.exceeded:
                 msg = (
-                    f"Token budget exhausted (session used {status.session_used}/{status.session_cap}). "
-                    "I cannot continue this conversation safely. Please start a new chat and narrow your request."
+                    f"Token budget for this session is exhausted ({status.session_used}/{status.session_cap}). "
+                    "Send `/clear` to reset the budget for this session, then retry with a narrower request "
+                    "(smaller date window, fewer entities, or a more specific filter)."
                 )
                 if on_stream:
                     await on_stream("tool_error", msg)
