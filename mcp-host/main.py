@@ -17,7 +17,7 @@ from auth import AuthError, UserClaims, validate_token
 from budget import SessionBudget
 from config import HOST, PORT, REDIS_URL
 from context_store import ContextStore
-from llm import chat_completion
+from llm import GeminiUnavailableError, chat_completion
 from loop_guard import LoopGuard
 from mcp_client import MCPClient
 from observability import instrument_fastapi, instrument_httpx, logfire_span, setup_logfire
@@ -225,6 +225,9 @@ async def websocket_chat(ws: WebSocket) -> None:
                 if _context_store:
                     await _context_store.save(session_id, history)
                 await _send(ws, "message", response_text)
+            except GeminiUnavailableError as exc:
+                logger.warning("Gemini upstream unavailable: %s", exc)
+                await _send(ws, "error", str(exc))
             except Exception as exc:
                 logger.error("Chat completion error: %s", exc, exc_info=True)
                 await _send(ws, "error", f"Failed to process request: {exc}")

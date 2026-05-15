@@ -85,11 +85,13 @@ def logfire_span(name: str, **attributes: Any) -> Iterator[Any]:
         return
     safe_attrs = {k: v for k, v in attributes.items() if v is not None}
     try:
-        with _logfire_mod.span(name, **safe_attrs) as span:
-            yield span
+        cm = _logfire_mod.span(name, **safe_attrs)
     except Exception as exc:
-        logger.debug("logfire span %r failed: %s", name, exc)
+        logger.debug("logfire span %r setup failed: %s", name, exc)
         yield _NoOpSpan()
+        return
+    with cm as span:
+        yield span
 
 def extract_entity_ids(args: dict[str, Any]) -> dict[str, str]:
 

@@ -1,12 +1,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 from typing import Any
 
 from google import genai
+from google.genai import errors as genai_errors
 from google.genai import types
 
 from budget import SessionBudget
@@ -458,15 +460,75 @@ def _is_retriable_empty_response(finish_reason: Any, has_content: bool) -> bool:
     name = (getattr(finish_reason, "name", None) or str(finish_reason or "")).upper()
     return "MALFORMED_FUNCTION_CALL" in name or name == "STOP"
 
+_TRANSIENT_HTTP_CODES = (429, 500, 502, 503, 504)
+_TRANSIENT_RETRY_DELAYS = (1.0, 2.5, 5.0)
+
+class GeminiUnavailableError(RuntimeError):
+    pass
+
+async def _call_with_transient_retry(
+    client: genai.Client,
+    model: str,
+    contents: list[types.Content],
+    config: types.GenerateContentConfig,
+) -> Any:
+
+    last_exc: Exception | None = None
+    for attempt, delay in enumerate((0.0,) + _TRANSIENT_RETRY_DELAYS):
+        if delay > 0:
+            await asyncio.sleep(delay)
+        try:
+            return await client.aio.models.generate_content(
+                model=model, contents=contents, config=config,
+            )
+        except genai_errors.APIError as exc:
+            code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
+            if code in _TRANSIENT_HTTP_CODES and attempt < len(_TRANSIENT_RETRY_DELAYS):
+                logger.warning(
+                    "Gemini %s returned %s; retrying in %.1fs (attempt %d/%d)",
+                    model, code, _TRANSIENT_RETRY_DELAYS[attempt], attempt + 1, len(_TRANSIENT_RETRY_DELAYS),
+                )
+                last_exc = exc
+                continue
+            raise
+    if last_exc is not None:
+        raise last_exc
+    raise GeminiUnavailableError(f"Gemini {model} unavailable after retries")
+
 async def _generate_with_fallback(
     client: genai.Client,
     contents: list[types.Content],
     config: types.GenerateContentConfig,
 ) -> tuple[Any, Any, Any, str]:
 
-    response = await client.aio.models.generate_content(
-        model=GEMINI_MODEL, contents=contents, config=config,
-    )
+    try:
+        response = await _call_with_transient_retry(client, GEMINI_MODEL, contents, config)
+    except genai_errors.APIError as exc:
+        code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
+        if code in _TRANSIENT_HTTP_CODES and GEMINI_FALLBACK_MODEL and GEMINI_FALLBACK_MODEL != GEMINI_MODEL:
+            logger.warning(
+                "Primary model %s exhausted retries with %s; falling back to %s",
+                GEMINI_MODEL, code, GEMINI_FALLBACK_MODEL,
+            )
+            try:
+                response = await _call_with_transient_retry(
+                    client, GEMINI_FALLBACK_MODEL, contents, config,
+                )
+                candidate = (response.candidates or [None])[0]
+                finish_reason = getattr(candidate, "finish_reason", None) if candidate else None
+                return response, candidate, finish_reason, GEMINI_FALLBACK_MODEL
+            except genai_errors.APIError as exc2:
+                code2 = getattr(exc2, "code", None) or getattr(exc2, "status_code", None)
+                raise GeminiUnavailableError(
+                    f"Gemini upstream is currently unavailable (HTTP {code or '?'} on {GEMINI_MODEL}, "
+                    f"HTTP {code2 or '?'} on fallback {GEMINI_FALLBACK_MODEL}). "
+                    "This is a temporary Google service issue — please retry in a few seconds."
+                ) from exc2
+        raise GeminiUnavailableError(
+            f"Gemini upstream is currently unavailable (HTTP {code or '?'} on {GEMINI_MODEL}). "
+            "This is a temporary Google service issue — please retry in a few seconds."
+        ) from exc
+
     candidate = (response.candidates or [None])[0]
     finish_reason = getattr(candidate, "finish_reason", None) if candidate else None
     has_content = bool(candidate and candidate.content and getattr(candidate.content, "parts", None))
@@ -481,9 +543,7 @@ async def _generate_with_fallback(
         "Primary model %s produced unrecoverable empty response (finish_reason=%s); retrying with %s",
         GEMINI_MODEL, finish_reason, GEMINI_FALLBACK_MODEL,
     )
-    response = await client.aio.models.generate_content(
-        model=GEMINI_FALLBACK_MODEL, contents=contents, config=config,
-    )
+    response = await _call_with_transient_retry(client, GEMINI_FALLBACK_MODEL, contents, config)
     candidate = (response.candidates or [None])[0]
     finish_reason = getattr(candidate, "finish_reason", None) if candidate else None
     return response, candidate, finish_reason, GEMINI_FALLBACK_MODEL
